@@ -641,7 +641,7 @@ static void bitfury_disable(struct thr_info *thr)
     applog(LOG_INFO, "INFO bitfury_disable");
 }
 
-/*
+
 static void get_options(struct cgpu_info *cgpu)
 {
     char buf[BUFSIZ+1];
