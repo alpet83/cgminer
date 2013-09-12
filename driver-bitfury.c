@@ -128,11 +128,18 @@ void bitfury_setSlotClk(struct bitfury_device *devices, int chip_n, int slot, in
     }
 }
 
-double tv2mcs(struct timeval *tv) {
+inline double tv2mcs(struct timeval *tv) {
     return (double)tv->tv_sec * 1e6 + (double)tv->tv_usec;
 }
 
-inline void test_reclock(struct bitfury_device *dev) {
+double tv_diff(PTIMEVAL a, PTIMEVAL b) {
+    double diff = tv2mcs(a) - tv2mcs(b);
+    if (diff < 0) diff += 24.0 *3600.0 * 1e6; // add one day
+    return diff;
+}
+
+
+inline void test_reclock(PBITFURY_DEVICE dev) {
 
     if ( dev->osc6_bits != dev->osc6_bits_upd ) {
          dev->osc6_bits = dev->osc6_bits_upd;
@@ -209,7 +216,7 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
     uint64_t hashes = 0;
     struct timeval now;
     cgtime(&now);
-    double now_mcs = tv2mcs(&now);
+
     int chip;
 
     for (chip = 0;chip < chip_n; chip++) {
@@ -240,15 +247,15 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
 
             if (o2work) {
                 work_completed(thr->cgpu, o2work);
-                double start = tv2mcs(&dev->work_start);
-                double diff = now_mcs - start;
-                if (diff < 0) diff += 24.0 *3600.0 * 1e6; // add one day
+                double diff = tv_diff (&now, &dev->work_start);
+                dev->work_end = now;
+
                 if (dev->work_median == 0)
                     dev->work_median = diff;
                 else
-                    dev->work_median = dev->work_median * 0.99 + diff *0.01; // EMA
+                    dev->work_median = dev->work_median * 0.993 + diff *0.007; // EMA
             }
-
+            // сдвиг миниочереди
             dev->o2work = dev->owork;
             dev->owork = dev->work;
             dev->work = NULL;
@@ -259,7 +266,7 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
     return hashes;
 }
 
-inline int work_send(struct thr_info *thr, struct bitfury_device *dev) {
+inline int work_send(struct thr_info *thr, PBITFURY_DEVICE dev) {
     dev->job_switched = 0;
     if ( dev->work == NULL )
     {
@@ -269,6 +276,18 @@ inline int work_send(struct thr_info *thr, struct bitfury_device *dev) {
 
         cgtime(&dev->work_start);
         work_to_payload(&(dev->payload), dev->work);
+
+        if (dev->work_end.tv_sec > 0) {
+            double diff = tv_diff (&dev->work_start, &dev->work_end); // сколько прошло перед работой
+
+            if ( ( diff > 0 ) && ( diff < 1e6 ) ) {
+                if (dev->work_wait == 0)
+                    dev->work_wait = diff;
+                else
+                    dev->work_wait = dev->work_wait * 0.993 + diff * 0.007; // EMA
+            }
+        }
+
         return 2;
     }
     return 1;
@@ -319,12 +338,13 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
        if ( 0 == work_send(thr, &devices[chip]) )
        {
            no_work ++;
+           // nmsleep(1); // процессору отбой
            return 0;
        }
 
 
     libbitfury_sendHashData(thr, devices, chip_n);
-    nmsleep(4);
+    nmsleep(3);
     hashes = works_receive(thr, devices, chip_n);
 
     cgtime(&now);
@@ -413,10 +433,10 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
 
 
             if ( maskv < 15 ) {
-                if ( ( maskv > 13 ) && ( dev->work_median > 0 ) )
-                    snprintf(stat_lines[n_slot] + len, 256 - len, " %2.0f @ %4.2f | ", ghash * 10, 1e6 / dev->work_median ); // speed and works/second
+                if ( ( maskv > 13 ) && ( dev->work_median > 0 ) && ( dev->work_wait > 0 ) )
+                    snprintf(stat_lines[n_slot] + len, 256 - len, "%3.0f @%5.2f%%| ", 4.294e7 / dev->work_median, 100 * dev->work_wait / dev->work_median ); // speed from work-time, wait time
                 else
-                    snprintf(stat_lines[n_slot] + len, 256 - len, " %2.0f - %4.1f | ", ghash * 10, dev->hw_rate ); // speed and errors
+                    snprintf(stat_lines[n_slot] + len, 256 - len, "%3.0f - %4.1f | ", ghash * 10, dev->hw_rate ); // speed and errors
             }
             else {
                 char selected[4] = { 32, 32, 32, 32 };
