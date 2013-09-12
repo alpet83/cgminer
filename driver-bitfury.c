@@ -293,6 +293,7 @@ inline int work_send(struct thr_info *thr, PBITFURY_DEVICE dev) {
     return 1;
 }
 
+static unsigned loops_count = 0;
 
 
 static int64_t bitfury_scanHash(struct thr_info *thr)
@@ -310,7 +311,7 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
     static time_t long_out_t = 0;
     int long_long_stat = 60 * 30;
     static time_t long_long_out_t;
-    static first = 0; //TODO Move to detect()
+
     static vc0_median[BITFURY_MAXBANKS];
     static vc1_median[BITFURY_MAXBANKS];
     static double ghs_median[BITFURY_MAXBANKS];
@@ -327,27 +328,37 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
     int i;
     static stat_dumps = 0;
 
+    loops_count ++;
+
     devices = thr->cgpu->devices;
     chip_n = thr->cgpu->chip_n;
+    cgtime(&now);
 
-    if (!first) init_devices(devices, chip_n);
+    if ( loops_count == 1 )
+         init_devices(devices, chip_n);
 
-    first = 1;
+    for (chip = 0; chip < chip_n; chip++) {
 
-    for (chip = 0; chip < chip_n; chip++)
+       int delay = 1100 / chip_n; // вписать планировку всех чипов в среднее время на задание
+
+       if ( loops_count < 10 ) nmsleep(delay);
+
+
        if ( 0 == work_send(thr, &devices[chip]) )
        {
            no_work ++;
            // nmsleep(1); // процессору отбой
            return 0;
        }
+    }
+
 
 
     libbitfury_sendHashData(thr, devices, chip_n);
-    nmsleep(3);
+    nmsleep(4);
     hashes = works_receive(thr, devices, chip_n);
 
-    cgtime(&now);
+    // cgtime(&now);
 
     int elapsed = now.tv_sec - short_out_t;
 
@@ -586,8 +597,10 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
             shares_first += chip < BITFURY_BANKCHIPS/2 ? shares_found : 0;
             shares_last += chip >= BITFURY_BANKCHIPS/2 ? shares_found : 0;
         }
+
         sprintf(line, "  !!!_________ LONG stat, elapsed %ds: ___________!!!", elapsed);
-        attron(A_BOLD);
+        // attron(A_BOLD);
+        printf("%s", CL_LT_YELLOW);
         applog(LOG_WARNING, line);
         for(i = 0; i < BITFURY_MAXBANKS; i++)
             if(strlen(stat_lines[i])) {
@@ -604,7 +617,8 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
                 applog(LOG_WARNING, stat_lines[i]);
             }
         long_out_t = now.tv_sec;
-        attroff(A_BOLD);
+        printf("%s", CL_RESET);
+        // attroff(A_BOLD);
     }
 #endif
 
@@ -661,7 +675,7 @@ static void bitfury_disable(struct thr_info *thr)
     applog(LOG_INFO, "INFO bitfury_disable");
 }
 
-
+/*
 static void get_options(struct cgpu_info *cgpu)
 {
     char buf[BUFSIZ+1];
