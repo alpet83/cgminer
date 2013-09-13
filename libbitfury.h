@@ -67,7 +67,8 @@ struct bitfury_device {
 	struct bitfury_payload o2payload;
 	unsigned int results[16];
 	int results_n;
-	time_t stat_ts[BITFURY_STAT_N];
+    time_t stat_ts [BITFURY_STAT_N];
+    double stat_tsf[BITFURY_STAT_N];
 	unsigned int stat_counter;
 	unsigned int future_nonce;
 	unsigned int old_nonce;
