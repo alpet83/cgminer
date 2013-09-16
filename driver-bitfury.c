@@ -32,8 +32,10 @@
 #include "tm_i2c.h"
 #include <stdio.h>
 #include <curses.h>
+#include "uthash.h"
 
 #define GOLDEN_BACKLOG 5
+#define BASE_OSC_BITS 51
 
 struct device_drv bitfury_drv;
 
@@ -159,30 +161,30 @@ void init_devices (struct bitfury_device *devices, int chip_n) {
     int i;
 
     for (i = 0; i < chip_n; i++) {
-            devices[i].osc6_bits = 54;
-            devices[i].osc6_bits_upd = 54;
+            devices[i].osc6_bits = 53;
+            devices[i].osc6_bits_upd = 53;
+            devices[i].fixed_clk = false;
         }
 
     if (1) { // alpet: подстройка моих чипов (известные оптимумы)
         // overclocking/downclocking
         // 0x036, 0x136, 0x236, 0x336, 0x436, 0x536, 0x636
-        int slot_0 [] = { 0x037, 0x437, 0x536, 0x636, 0x737, -1 };
-        int slot_1 [] = { 0x036, 0x235, 0x635, 0x737, -1 };
-        int slot_2 [] = { 0x037, 0x236, 0x635, 0x437, -1 };
-        int slot_3 [] = { 0x036, 0x236, 0x436, 0x536, 0x637, -1 };
-        int slot_4 [] = { 0x137, 0x236, 0x335, 0x536, 0x636, 0x737, -1 };
-        int slot_5 [] = { 0x036, 0x136, 0x235, 0x336, 0x435, 0x536, 0x636, 0x736, -1 };
-        int slot_6 [] = { 0x035, 0x136, 0x336, 0x436, 0x636,  -1 };
-        int slot_7 [] = { 0x036, 0x136, 0x336, 0x336, 0x436, 0x636, 0x737, -1 };
-        int slot_8 [] = { 0x136, 0x235, 0x336, 0x437, 0x537, 0x636, 0x736, -1 };
-        int slot_9 [] = { 0x036, 0x136, 0x235, 0x336, 0x436, 0x537, 0x637, 0x736 -1 };
-        int slot_A [] = { 0x036, 0x136, 0x236, 0x337, 0x436, 0x636, 0x736, -1 }; //
+        int slot_0 [] = { 0x035, 0x136, 0x235, 0x335, -1 }; // 0x035, 0x135, 0x235, 0x335, 0x435, 0x536, 0x636, 0x735,
+        int slot_1 [] = { 0x034, 0x135, 0x236, 0x335, 0x435, 0x535, 0x635, -1 }; // 0x035, 0x135, 0x235, 0x435, 0x637,
+        int slot_2 [] = { 0x036, 0x135, 0x235, 0x333, 0x436, 0x534, 0x634, -1 }; // 0x136, 0x236, 0x335, 0x436, 0x535, 0x635, 0x734,
+        int slot_3 [] = { 0x036, 0x136, 0x235, 0x335, 0x734, -1 }; // 0x035, 0x135, 0x234, 0x335, 0x435, 0x536, 0x635, 0x735,
+        int slot_4 [] = { 0x035, 0x135, 0x333, 0x535, -1 }; // 0x136, 0x236, 0x334, 0x435, 0x535, 0x634, 0x735,
+        int slot_5 [] = { 0x036, 0x433, 0x535, 0x635, 0x734, -1 }; // 0x035, 0x136, 0x235, 0x334, 0x536, 0x636, 0x735,
+        int slot_6 [] = { 0x034, 0x135, 0x234, 0x335, 0x435, 0x635, 0x735, -1 }; // 0x035, 0x135, 0x235, 0x336, 0x434, 0x535,
+        int slot_7 [] = { 0x036, 0x134, 0x234, 0x336, 0x435, 0x536, 0x735, -1 }; // 0x035, 0x135, 0x236, 0x336, 0x434, 0x535, 0x636, 0x735,
+        int slot_8 [] = { 0x035, 0x134, 0x235, 0x336, 0x433, 0x536, 0x634, 0x733, -1 }; // 0x035, 0x135, 0x235, 0x335, 0x434, 0x535, 0x634, 0x735,
+        int slot_9 [] = { 0x035, 0x134, 0x236, 0x335, 0x435, 0x535, 0x635, 0x736, -1 }; // 0x036, 0x134, 0x236, 0x335, 0x435, 0x535, 0x635, 0x735,
+        int slot_A [] = { 0x034, 0x135, 0x234, 0x334, 0x433, 0x634, -1 }; // 0x035, 0x135, 0x235, 0x335, 0x435, 0x535, 0x635, 0x735,
         int slot_B [] = { -1 }; // absent
-        int slot_C [] = { 0x536, 0x636, 0x736, -1 };
-        int slot_D [] = { 0x236, 0x336, 0x536, -1 };
-        int slot_E [] = { 0x035, 0x136, 0x236, 0x336, 0x736, -1 };
-        int slot_F [] = { 0x136, 0x236, 0x336, 0x436, 0x536, 0x636, 0x736, -1 };
-
+        int slot_C [] = { 0x035, 0x235, 0x335, 0x435, 0x535, 0x633, 0x735, -1 }; // 0x035, 0x236, 0x336, 0x436, 0x536, 0x636, 0x736,
+        int slot_D [] = { 0x035, 0x135, 0x235, 0x335, 0x433, 0x535, 0x636, 0x734, -1 }; // 0x035, 0x136, 0x235, 0x335, 0x435, 0x535, 0x635,
+        int slot_E [] = { 0x135, 0x535, -1 }; // 0x035, 0x134, 0x235, 0x334, 0x435
+        int slot_F [] = { 0x036, 0x135, 0x235, 0x435, 0x535, 0x635, 0x735, -1 }; // 0x034, 0x135, 0x235, 0x334, 0x435, 0x535, 0x636, 0x736,
         int *all_slots[] = { slot_0, slot_1, slot_2, slot_3, slot_4, slot_5, slot_6, slot_7, slot_8, slot_9, slot_A, slot_B, slot_C, slot_D, slot_E, slot_F, NULL };
 
         for (i = 0; ( i < BITFURY_MAXBANKS ) && all_slots[i]; i ++)
@@ -216,6 +218,68 @@ void init_devices (struct bitfury_device *devices, int chip_n) {
 }
 
 
+int next_prefetch(int i) {
+    return ( i + 1 ) % PREFETCH_WORKS;
+}
+
+
+inline int works_prefetched (struct cgpu_info *cgpu) {
+    int i, cnt = 0;
+    for (i = 0; i < PREFETCH_WORKS; i ++)
+        if ( cgpu->prefetch[i] ) cnt ++;
+    return cnt;
+}
+
+static bool bitfury_fill(struct cgpu_info *cgpu) {
+    bool ret;
+    int i;
+
+    /*
+    struct work* wrk, *tmp;
+
+    HASH_ITER(hh, cgpu->queued_work, wrk, tmp) {
+         if (!wrk->queued) cnt ++;
+    }
+
+    return ( cnt > 170 ); // */
+
+
+    struct work* nw = get_queued (cgpu);
+    if (!nw) return true;
+
+    rd_lock(&cgpu->qlock); //
+    for (i = 0; i < PREFETCH_WORKS; i ++)  {
+        if ( !cgpu->prefetch [cgpu->w_prefetch] ) {
+            cgpu->prefetch [cgpu->w_prefetch] = nw;
+            break;
+        }
+        cgpu->w_prefetch = next_prefetch ( cgpu->w_prefetch );
+    }
+    ret = ( works_prefetched(cgpu) >= PREFETCH_WORKS ); // need find optimal values
+    rd_unlock(&cgpu->qlock);
+    return ret;
+    // */
+}
+
+struct work* load_prefetch(struct cgpu_info *cgpu){
+    int i;
+    struct work* result = NULL;
+
+    rd_lock(&cgpu->qlock);
+    // выборка задания из большой очереди
+    for (i = 0; i < PREFETCH_WORKS; i ++)  {
+        if ( cgpu->prefetch [cgpu->r_prefetch]  ) {
+            result = cgpu->prefetch [cgpu->r_prefetch];
+            cgpu->prefetch [cgpu->r_prefetch] = NULL; // больше не выдавать
+            break;
+        }
+        cgpu->r_prefetch = next_prefetch ( cgpu->r_prefetch );
+    }
+    rd_unlock(&cgpu->qlock); // */
+    return result;
+}
+
+
 inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devices, int chip_n) {
 
     uint64_t hashes = 0;
@@ -227,7 +291,8 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
     for (chip = 0;chip < chip_n; chip++) {
         int nonces_cnt = 0;
         struct bitfury_device *dev = &devices[chip];
-        if (dev->job_switched) {
+
+        if (dev->job_switched && dev->work) {
             int j;
             int *res = dev->results;
             struct work *work = dev->work;
@@ -271,14 +336,20 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
     return hashes;
 }
 
-inline int work_send(struct thr_info *thr, PBITFURY_DEVICE dev) {
+inline int work_push(struct thr_info *thr, PBITFURY_DEVICE dev) {
     dev->job_switched = 0;
     if ( dev->work == NULL )
     {
         test_reclock(dev); // думаю здесь самое лучшее место, чтобы чип перенастроить на другую частоту
-        dev->work = get_queued(thr->cgpu);
-        if (dev->work == NULL) return 0; // cannot get work
 
+        struct work *qwork  = thr->cgpu->queued_work;
+
+        dev->work = load_prefetch (thr->cgpu);
+        if (dev->work == NULL)           // no prefetched
+        {
+           dev->work = get_queued(thr->cgpu);
+           if (NULL == dev->work) return 0;
+        }
         cgtime(&dev->work_start);
         work_to_payload(&(dev->payload), dev->work);
 
@@ -299,6 +370,7 @@ inline int work_send(struct thr_info *thr, PBITFURY_DEVICE dev) {
 }
 
 static unsigned loops_count = 0;
+
 
 
 static int64_t bitfury_scanHash(struct thr_info *thr)
@@ -324,13 +396,15 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
     static vc1_median[BITFURY_MAXBANKS];
     static double ghs_median[BITFURY_MAXBANKS];
 
-    static char CL_RESET[]     = "\033[0m";
-    static char CL_LT_RED[]    = "\033[1;31m";
-    static char CL_LT_GREEN[]  = "\033[1;32m";
-    static char CL_LT_YELLOW[] = "\033[1;33m";
-    static char CL_LT_BLUE[]   = "\033[1;34m";
-    static char CL_LT_CYAN[]   = "\033[1;36m";
-    static char CL_LT_WHITE[]  = "\033[1;37m";
+    static char CL_RESET[]     = "\e[0m";
+    static char CL_LT_RED[]    = "\e[1;31m";
+    static char CL_LT_GREEN[]  = "\e[1;32m";
+    static char CL_LT_YELLOW[] = "\e[1;33m";
+    static char CL_LT_BLUE[]   = "\e[1;34m";
+    static char CL_LT_CYAN[]   = "\e[1;36m";
+    static char CL_LT_WHITE[]  = "\e[1;37m";
+
+    static int last_chip = 0; // для кольцевого обхода по выдаче заданий
 
 
     int i;
@@ -348,18 +422,18 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
     for (chip = 0; chip < chip_n; chip++) {
 
        int delay = 1100 / chip_n; // вписать планировку всех чипов в среднее время на задание
-
        if ( loops_count < 10 ) nmsleep(delay);
-
-
-       if ( 0 == work_send(thr, &devices[chip]) )
+       if ( 0 == work_push(thr, &devices[last_chip]) )
        {
            no_work ++;
            // nmsleep(1); // процессору отбой
-           return 0;
+           // return 0;
+           break;
        }
+       last_chip ++;
+       if (last_chip >= chip_n)
+           last_chip = 0;
     }
-
 
 
     libbitfury_sendHashData(thr, devices, chip_n);
@@ -426,7 +500,7 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
                 vc0_median[n_slot] = slot_vc0;
                 vc1_median[n_slot] = slot_vc1;
 
-                sprintf(stat_lines[n_slot], "[%X] T:%3.0f | V: %.0f %.0f | ", n_slot, slot_temp, slot_vc0, slot_vc1);
+                sprintf(stat_lines[n_slot], "[%X] T:%3.0f | V: %4.0f %4.0f| ", n_slot, slot_temp, slot_vc0, slot_vc1);
                 last_slot = n_slot;
             }
 
@@ -449,48 +523,72 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
             if (stat_dumps < 5)
                dev->hw_rate = hw_errs;
             else
-               dev->hw_rate = dev->hw_rate * 0.9 + hw_errs * 0.1; // EMA 10
+               dev->hw_rate = dev->hw_rate * 0.93 + hw_errs * 0.07; // EMA 16
 
-            int ridx = dev->osc6_bits - 53;
+            int ridx = dev->osc6_bits - BASE_OSC_BITS;
+
+            double ema_ghash = ghash;
 
             // сбор статистки по хэш-рейту на клок
-            if ( ridx >= 0 ) {
+            if ( ( ridx >= 0 ) && ( stat_dumps > 1 )  ) {
                 float prev = dev->rbc_stat[ridx] * 0.92;
-                if ( dev->rbc_stat[ridx] > 0 ) //
-                    dev->rbc_stat[ridx]  = dev->rbc_stat[ridx] * 0.93 + alt_gh * 0.07; // 20 loops for stat
+
+                float ema_value = 300;
+                if ( ema_value > stat_dumps )
+                     ema_value = stat_dumps;
+
+                float prev_part = ( 1 - 1 / ema_value );
+
+                ema_ghash = dev->rbc_stat[ridx] * prev_part + ghash * (1 - prev_part); // up to 300 loops for stat
+                // ema_ghash -= dev->hw_rate / 1000;  // для улучшения сортировки
+
+                if ( ( dev->rbc_stat[ridx] > 0 ) && ( dev->alerts < 3 ) ) //
+                    dev->rbc_stat[ridx]  = ema_ghash;
                 else
-                     dev->rbc_stat[ridx] = alt_gh;
+                    dev->rbc_stat[ridx] = ghash;
+
+                gh[dev->slot][chip % BITFURY_BANKCHIPS] = ema_ghash;
             }
 
-            char *cl_tag = CL_RESET;
-            if ( ghash < 1 )  cl_tag = CL_LT_RED;
-            if ( ghash >= 2 ) cl_tag = CL_LT_YELLOW;
-            if ( ghash >= 3 ) cl_tag = CL_LT_GREEN;
 
+
+            char *cl_tag = " ";
+            if ( ema_ghash >= 3 ) cl_tag = " +";
+            if ( ema_ghash >= 4 ) cl_tag = "++";
 
 
             if ( maskv < 15 ) {
+
                 if ( ( maskv > 13 ) && ( dev->work_median > 0 ) )
                     snprintf(stat_lines[n_slot] + len, 256 - len, "%3.0f @%5.2f%%| ", alt_gh * 10, 100 * dev->work_wait / dev->work_median ); // speed from work-time, wait time
                 else
-                    snprintf(stat_lines[n_slot] + len, 256 - len, "%3.0f - %4.1f | ", ghash * 10, dev->hw_rate ); // speed and errors
+                    snprintf(stat_lines[n_slot] + len, 256 - len, "%2s%2.0f - %4.1f | ", cl_tag, ema_ghash * 10, dev->hw_rate ); // speed and errors
             }
             else {
-                char selected[4] = { 32, 32, 32, 32 };
+                char selected[5] = { 32, 32, 32, 32, 32 };
 
-                selected[ridx] = 0x3E;
+                selected[ridx] = 0x5B;
+                selected[ridx + 1] = 0x5D;
 
-                char s53 = selected[0];
-                char s54 = selected[1];
-                char s55 = selected[2];
-                char s56 = selected[3];
+                char s0 = selected[0];
+                char s1 = selected[1];
+                char s2 = selected[2];
+                char s3 = selected[3];
+                char s4 = selected[4];
 
                 float h53 = dev->rbc_stat[0] * 10;
                 float h54 = dev->rbc_stat[1] * 10;
                 float h55 = dev->rbc_stat[2] * 10;
                 float h56 = dev->rbc_stat[3] * 10;
 
-                snprintf( stat_lines[n_slot] + len, 256 - len, "%c%2.0f%c%2.0f%c%2.0f%c%2.0f|", s53, h53, s54, h54, s55, h55, s56, h56 ); // intermediate dump clock
+                snprintf( stat_lines[n_slot] + len, 256 - len, "%c%2.0f%c%2.0f%c%2.0f%c%2.0f|", s0, h53, s1, h54, s2, h55, s3, h56, s4 ); // intermediate dump clock
+
+                if ( ema_ghash < 2.2 && !dev->fixed_clk ) {
+                    dev->fixed_clk = false;
+                    printf(CL_LT_RED);
+                    applog(LOG_WARNING, "#WARNING: Chip at %x x %x has low median hashrate, auto-clock enabled ", dev->fasync, dev->slot );
+                    printf(CL_RESET);
+                }
             }
 
 
@@ -498,15 +596,16 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
             if ( ( stat_dumps > 16 ) && ( maskv == 15 ) && !dev->fixed_clk ) {
                 // переключение клока принудительно
 
-                int new_clk = 1;
-                if ( stat_dumps < 128 ) new_clk = ( ridx + 0 ) & 3; // masked enum
+                int new_clk = ridx;
+
+                if ( stat_dumps < 128 ) new_clk = ( ridx + 1 ) & 3; // masked enum
 
 
                 float best = 3; // extremum Ghz for 54 clk
+                best = dev->rbc_stat[ridx] + 0.1;
 
-                if ( stat_dumps > 128 ) {
+                if ( stat_dumps > 128 && best < 4 ) {
                     // поиск наилучшего, для работы с заданным клоком.
-                    best = dev->rbc_stat[ridx] + 0.1;
                     // if ( stat_dumps > 150 ) best = 3;
 
                     for (ridx = 0; ridx < 4; ridx ++) {
@@ -516,7 +615,7 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
                     } // for
                 }
 
-                new_clk = new_clk + 53;
+                new_clk = new_clk + BASE_OSC_BITS;
 
                 if ( dev->osc6_bits_upd != new_clk ) {
                      dev->osc6_bits_upd = new_clk;
@@ -532,7 +631,7 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
                     applog(LOG_WARNING, " %d-DUMP: for slot 0x%X chip 0x%X, osc6_bits reduced to %d ", maskv, n_slot, i_chip, dev->osc6_bits );
                     send_freq(n_slot, i_chip, dev->osc6_bits);
                 } else //
-                if ( ( dev->hw_rate > 50.0 ) && ( dev->osc6_bits > 53 ) ){
+                if ( ( dev->hw_rate > 50.0 ) && ( dev->osc6_bits > BASE_OSC_BITS ) ){
                     dev->osc6_bits --; // downclock
                     applog(LOG_WARNING, " %d-DUMP: for slot 0x%X chip 0x%X, osc6_bits reduced to %d ", maskv, n_slot, i_chip, dev->osc6_bits );
                     send_freq(n_slot, i_chip, dev->osc6_bits);
@@ -562,6 +661,8 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
 #ifdef BITFURY_ENABLE_SHORT_STAT
         // sprintf(line, "vvvvwww SHORT stat %ds: wwwvvvv", short_stat);
         sprintf(line, "  ================== SHORT stat, elapsed %.3fs, no_work = 5%d, dump %d =================== ", elps_mcs / 1e6, no_work, stat_dumps);
+
+
         applog(LOG_WARNING, line);
         //sprintf(line, "stranges: %u", strange_counter);
         double ghsm_saldo = 0;
@@ -596,11 +697,27 @@ static int64_t bitfury_scanHash(struct thr_info *thr)
 
                 ghs_median[i] = ghmed;
                 ghsm_saldo += ghmed;
+
+
+                if (maskv < 18) {
+                    if (i & 1 == 1)
+                        printf(CL_LT_GREEN);
+                    else
+                        printf("\e[0m\r");
+                }
+
                 applog(LOG_WARNING, stat_lines[i]);
             }
 
         elapsed = now.tv_sec - long_out_t;
-        applog(LOG_WARNING, "Median hash-rate saldo = %4.1f, seconds to long stat %5d ", ghsm_saldo, long_stat - elapsed );
+        printf("\e[37;40m\r");
+
+        rd_lock(&thr->cgpu->qlock);
+        int hcount = HASH_COUNT(thr->cgpu->queued_work);
+        int pcount = works_prefetched(thr->cgpu);
+        rd_unlock(&thr->cgpu->qlock);
+
+        applog(LOG_WARNING, "Median hash-rate saldo = %4.1f, seconds to long stat %5d, prefetched = %3d ", ghsm_saldo, long_stat - elapsed, pcount  );
         applog(LOG_WARNING, line);
 #endif
         short_out_t = now.tv_sec;
@@ -830,6 +947,7 @@ struct device_drv bitfury_drv = {
     .scanwork = bitfury_scanHash,
     .thread_shutdown = bitfury_shutdown,
     .hash_work = hash_queued_work,
+    .queue_full = bitfury_fill,
     .get_api_stats = bitfury_api_stats,
 };
 
