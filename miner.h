@@ -476,8 +476,12 @@ struct cgpu_info {
 	pthread_mutex_t device_mutex;
 #endif /* USE_BITFORCE || USE_BFLSC */
 #ifdef USE_BITFURY
-	int chip_n;
+#define PREFETCH_WORKS 256
+    int chip_n; //
 	struct bitfury_device devices[200]; // TODO Move somewhere to appropriate place
+    struct work *prefetch[PREFETCH_WORKS]; // большая очередь заданий
+    int w_prefetch;
+    int r_prefetch;
 #endif
 	enum dev_enable deven;
 	int accepted;
@@ -871,9 +875,6 @@ extern char *opt_icarus_timing;
 extern bool opt_worktime;
 #ifdef USE_AVALON
 extern char *opt_avalon_options;
-#endif
-#ifdef USE_BITFURY
-extern char *opt_bitfury_clockbits;
 #endif
 #ifdef USE_USBUTILS
 extern char *opt_usb_select;
