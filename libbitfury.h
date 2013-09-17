@@ -54,9 +54,9 @@ struct bitfury_device {
     unsigned osc6_bits_upd;
 	unsigned newbuf[17];
 	unsigned oldbuf[17];
-	struct work * work;
-	struct work * owork;
-	struct work * o2work;
+    struct work *work;
+    struct work *owork;
+    struct work *o2work;
     struct timeval work_start;
     struct timeval work_end;
     double work_median;  // median time in microseconds
@@ -89,10 +89,16 @@ struct bitfury_device {
 	unsigned slot;
 	unsigned fasync;
 	unsigned hw_errors;
-    int      alerts;
-    float    hw_rate;
-    bool     fixed_clk;
-    float    rbc_stat[4];   // rate-by-clock: 53, 54, 55, 56 associated to chip hash-rate
+
+    int              alerts;
+    float            hw_rate;
+    bool             fixed_clk;
+    float            rbc_stat[4];   // rate-by-clock: 53, 54, 55, 56 associated to chip hash-rate
+    int              cch_stat[4];   // clock choice stat: сколько выбирался каждый клок по итогам соревнования
+    int              csw_back;      // clock switch back: сколько статистики прошло, после переключения частоты
+    int              csw_count;     // clock switch count: сколько раз сменялась частота принудительно
+    struct timeval   rst_time;      // reset time: когда устройство сбрасывалось последний раз
+
 	unsigned int matching_work;
 	unsigned int nonces[32];
 	int current_nonce;
