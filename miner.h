@@ -477,11 +477,7 @@ struct cgpu_info {
 #endif /* USE_BITFORCE || USE_BFLSC */
 #ifdef USE_BITFURY
 #define PREFETCH_WORKS 256
-<<<<<<< HEAD
     int chip_count; //
-=======
-    int chip_n; //
->>>>>>> 10f0a9e6c535e486e5a05b3091a324bce2359e79
 	struct bitfury_device devices[200]; // TODO Move somewhere to appropriate place
     struct work *prefetch[PREFETCH_WORKS]; // большая очередь заданий
     int w_prefetch;

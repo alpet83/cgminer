@@ -36,6 +36,8 @@
 #include <linux/i2c-dev.h>
 #include <sys/stat.h>
 
+#include "bitfury-config.h"
+
 static volatile unsigned *gpio;
 static int fd;
 
@@ -186,7 +188,9 @@ int spi_txrx(const char *wrbuf, char *rdbuf, int bufsz)
 		}
         }
 
-//	spi_reset(4096);
+#ifdef BITFURY_METABANK
+	spi_reset(4096);
+#endif
 
 	return 0;
 }

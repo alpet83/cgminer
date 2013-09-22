@@ -157,9 +157,7 @@ int opt_usbdump = -1;
 bool opt_usb_list_all;
 cgsem_t usb_resource_sem;
 #endif
-#ifdef USE_BITFURY
-char *opt_bitfury_clockbits = NULL;
-#endif
+
 char *opt_kernel_path;
 char *cgminer_path;
 
@@ -6588,13 +6586,6 @@ static void *watchdog_thread(void __maybe_unused *userdata)
 			enum dev_enable *denable;
 			char dev_str[8];
 			int gpu;
-
-            if (!thr) {
-                applog(LOG_WARNING, "#ERROR: thread not assigned for device %d ", i);
-                continue;
-            }
-
-
 
 			cgpu->drv->get_stats(cgpu);
 
