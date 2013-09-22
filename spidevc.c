@@ -37,14 +37,21 @@
 #include <sys/stat.h>
 
 #include "bitfury-config.h"
+#include "miner.h"
 
 static volatile unsigned *gpio;
 static int fd;
 
 void spi_init(void)
 {
-	int mem_fd;
-	int mode = 0, bits = 8, speed = 500000;
+    int mem_fd;
+
+    int mode = 0, bits = 8, speed = spi_clock;
+
+
+    applog(LOG_WARNING,"SPI clock assigned to %.2f Mhz ", 0.001 * (float)speed );
+
+
 
 	if(system("modprobe i2c-dev")) {
 		perror("FATAL, modprobe i2c-dev failed (must be root)");

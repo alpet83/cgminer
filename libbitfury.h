@@ -65,7 +65,6 @@ struct bitfury_payload {
 
 struct bitfury_device {
 	unsigned osc6_bits;
-    unsigned osc6_bits_setpoint;
     unsigned osc6_bits_upd;
 	unsigned newbuf[17];
 	unsigned oldbuf[17];

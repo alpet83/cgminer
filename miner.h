@@ -878,6 +878,7 @@ extern char *opt_avalon_options;
 #endif
 #ifdef USE_BITFURY
 extern char *opt_bitfury_clockbits;
+extern int spi_clock;
 #endif
 #ifdef USE_USBUTILS
 extern char *opt_usb_select;

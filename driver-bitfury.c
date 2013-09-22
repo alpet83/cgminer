@@ -192,18 +192,17 @@ void init_devices (struct bitfury_device *devices, int chip_count) {
 
 
     for (i = 0; i < chip_count; i++) {
+        dev = &devices[i];
+
 #ifdef FAST_CLOCK1
-            devices[i].osc6_bits = 53;
-            devices[i].osc6_bits_upd = 53;
+            dev->osc6_bits = 53;
+            if (!dev->osc6_bits_upd) dev->osc6_bits_upd = 53;
 #else
-            devices[i].osc6_bits = 54;
-            devices[i].osc6_bits_upd = 54;
+            dev->osc6_bits = 54;
+            if (!dev->osc6_bits_upd) dev->osc6_bits_upd = 54; // если не задано через опции командной строки
 #endif
-            devices[i].fixed_clk = false;
-            devices[i].rbc_stat[0] = 0;
-            devices[i].rbc_stat[1] = 0;
-            devices[i].rbc_stat[2] = 0;
-            devices[i].rbc_stat[3] = 0;
+            dev->fixed_clk = false;
+            dev->rbc_stat[0] = dev->rbc_stat[1] = dev->rbc_stat[2] = dev->rbc_stat[3] = 0;
         }
 
     if (1) { // alpet: подстройка моих чипов (известные оптимумы)
@@ -1087,17 +1086,6 @@ static void bitfury_statline_before(char *buf, struct cgpu_info *cgpu)
     applog(LOG_INFO, "INFO bitfury_statline_before");
 }
 
-static bool bitfury_prepare(struct thr_info *thr)
-{
-    struct timeval now;
-    struct cgpu_info *cgpu = thr->cgpu;
-
-    cgtime(&now);
-    get_datestamp(cgpu->init, &now);
-
-    applog(LOG_INFO, "INFO bitfury_prepare");
-    return true;
-}
 
 static void bitfury_shutdown(struct thr_info *thr)
 {
@@ -1124,7 +1112,7 @@ static void get_options(struct cgpu_info *cgpu)
     int i, slot, fs, bits, chip, def_bits;
 
     for(i=0; i<cgpu->chip_count; i++)
-        cgpu->devices[i].osc6_bits_setpoint = 54; // this is default value
+        cgpu->devices[i].osc6_bits_upd = 54; // this is default value
 
     if (opt_bitfury_clockbits == NULL) {
         buf[0] = '\0';
@@ -1157,7 +1145,7 @@ static void get_options(struct cgpu_info *cgpu)
                     bits = atoi(colon2);
                     chip = bitfury_findChip(cgpu->devices, cgpu->chip_count, slot, fs);
                     if(chip > 0 && chip < cgpu->chip_count && bits >= 48 && bits <= 56) {
-                        cgpu->devices[chip].osc6_bits_setpoint = bits;
+                        cgpu->devices[chip].osc6_bits_upd = bits;
                         applog(LOG_INFO, "Set clockbits: slot=%d chip=%d bits=%d", slot, fs, bits);
                     }
                 }
@@ -1165,7 +1153,7 @@ static void get_options(struct cgpu_info *cgpu)
                 def_bits = atoi(buf);
                 if(def_bits >= 48 && def_bits <= 56) {
                     for(i=0; i<cgpu->chip_count; i++)
-                        cgpu->devices[i].osc6_bits_setpoint = def_bits;
+                        cgpu->devices[i].osc6_bits_upd = def_bits;
                 }
             }
         }
@@ -1173,6 +1161,21 @@ static void get_options(struct cgpu_info *cgpu)
             ptr = ++comma;
     } while (comma != NULL);
 } // */
+
+static bool bitfury_prepare(struct thr_info *thr)
+{
+    struct timeval now;
+    struct cgpu_info *cgpu = thr->cgpu;
+
+    cgtime(&now);
+    get_datestamp(cgpu->init, &now);
+
+    get_options(cgpu);
+
+    applog(LOG_INFO, "INFO bitfury_prepare");
+    return true;
+}
+
 
 static struct api_data *bitfury_api_stats(struct cgpu_info *cgpu)
 {

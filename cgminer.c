@@ -150,6 +150,7 @@ char *opt_avalon_options = NULL;
 #endif
 #ifdef USE_BITFURY
 char *opt_bitfury_clockbits = NULL;
+int  spi_clock = 500000;
 #endif
 #ifdef USE_USBUTILS
 char *opt_usb_select = NULL;
@@ -911,6 +912,7 @@ static char *set_bitfury_clockbits(const char *arg)
 
 	return NULL;
 }
+
 #endif
 
 #ifdef USE_USBUTILS
@@ -1091,7 +1093,10 @@ static struct opt_table opt_config_table[] = {
 #ifdef USE_BITFURY
 	OPT_WITH_ARG("--bitfury-clockbits",
 		     set_bitfury_clockbits, NULL, NULL,
-		     "Set bitfury clockbits options chip:bits,chip:bits,..."),
+		     "Set bitfury clockbits options chip:bits,chip:bits,..."),    
+    OPT_WITH_ARG("--bitfury-spiclock",
+             opt_set_intval, NULL, &spi_clock,
+             "Set bitfury device SPI clock, default 500000 (0.5Mhz) "),
 #endif
 	OPT_WITHOUT_ARG("--load-balance",
 		     set_loadbalance, &pool_strategy,
