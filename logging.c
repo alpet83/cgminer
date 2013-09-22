@@ -28,13 +28,14 @@ static void my_log_curses(int prio, const char *datetime, const char *str)
 
 #ifdef HAVE_CURSES
 	extern bool use_curses;
-	if (use_curses && log_curses_only(prio, datetime, str))
-		;
+    if ( use_curses && log_curses_only(prio, datetime, str) ) {
+        // log_curses_only(prio, "\n", " ");
+    }
 	else
 #endif
 	{
 		mutex_lock(&console_lock);
-		printf("%s%s%s", datetime, str, "                    \n");
+        printf("%s%s%s", datetime, str, "                    \n");
 		mutex_unlock(&console_lock);
 	}
 }
@@ -63,20 +64,26 @@ void _applog(int prio, const char *str)
 		const time_t tmp_time = tv.tv_sec;
 		tm = localtime(&tmp_time);
 
-		sprintf(datetime, " [%d-%02d-%02d %02d:%02d:%02d] ",
+        sprintf(datetime, " [%d-%02d-%02d %02d:%02d:%02d.%03d] ",
 			tm->tm_year + 1900,
 			tm->tm_mon + 1,
 			tm->tm_mday,
 			tm->tm_hour,
 			tm->tm_min,
-			tm->tm_sec);
+            tm->tm_sec,
+            tv.tv_usec / 1000);
 
 		/* Only output to stderr if it's not going to the screen as well */
-		if (!isatty(fileno((FILE *)stderr))) {
-			fprintf(stderr, "%s%s\n", datetime, str);	/* atomic write to stderr */
-			fflush(stderr);
-		}
 
-		my_log_curses(prio, datetime, str);
+        // if ( strstr(str, "\033") != NULL )
+        // printf("%s%s \n\r", datetime, str);	// print to screen (colored scuko!)
+        my_log_curses(prio, datetime, str); // why color tags removed?
+
+		if (!isatty(fileno((FILE *)stderr))) {
+            fprintf(stderr, "%s%s\n", datetime, str);	//
+			fflush(stderr);
+        } // */
+
+
 	}
 }
