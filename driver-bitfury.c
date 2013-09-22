@@ -289,8 +289,10 @@ void get_opt_filename(char *filename) {
 void load_opt_conf (struct bitfury_device *devices, int chip_count) {
     char filename[PATH_MAX];
     get_opt_filename(filename);
-    applog(LOG_WARNING, "loading opt configuration from %s ", filename);
     FILE *fcfg = fopen(filename, "r");
+    if (!fcfg) return;
+
+    applog(LOG_WARNING, "loading opt configuration from %s ", filename);
 
     int lcount = 0;
 
