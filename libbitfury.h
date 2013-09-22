@@ -35,7 +35,6 @@
 #define BITFURY_MAXCHIPS 256
 #define BITFURY_MAXBANKS 16
 #define BITFURY_BANKCHIPS 8
-<<<<<<< HEAD
 #define BITFURY_SCANHASH_DELAY 60
 
 #endif
@@ -53,11 +52,6 @@
 #endif
 
 #include "miner.h"
-=======
-
-#define BITFURY_ENABLE_SHORT_STAT 1
-#define BITFURY_ENABLE_LONG_STAT 1
->>>>>>> 10f0a9e6c535e486e5a05b3091a324bce2359e79
 
 
 struct bitfury_payload {
@@ -123,21 +117,14 @@ struct bitfury_device {
 	unsigned int matching_work;
 	unsigned int nonces[32];
 	int current_nonce;
-<<<<<<< HEAD
 	double gh_stat[8];
-=======
->>>>>>> 10f0a9e6c535e486e5a05b3091a324bce2359e79
 };
 
 typedef struct bitfury_device *PBITFURY_DEVICE;
 typedef struct timeval *PTIMEVAL;
 
 int libbitfury_readHashData(unsigned int *res);
-<<<<<<< HEAD
 int libbitfury_sendHashData(struct thr_info *thr, struct bitfury_device *bf, int chip_count);
-=======
-int libbitfury_sendHashData(struct thr_info *thr, struct bitfury_device *bf, int chip_n);
->>>>>>> 10f0a9e6c535e486e5a05b3091a324bce2359e79
 void work_to_payload(struct bitfury_payload *p, struct work *w);
 struct timespec t_diff(struct timespec start, struct timespec end);
 int libbitfury_detectChips(struct bitfury_device *devices);
