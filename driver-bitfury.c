@@ -331,8 +331,17 @@ void load_opt_conf (struct bitfury_device *devices, int chip_count) {
 
                 if ( n_chip < 0 ) break;
                 int i = bitfury_findChip (devices, chip_count, n_slot, n_chip);
-                if ( i >= 0 )
-                    memcpy( devices[i].cch_stat, v, sizeof(v) ); // update stat
+                if ( i >= 0 ) {
+                    PBITFURY_DEVICE dev = &devices[i];
+                    memcpy( dev->cch_stat, v, sizeof(v) ); // update stat
+                    int best = 0;
+                    // поправка лучшего битклока по количеству выборов
+                    for (i = 0; i < 4; i ++)
+                        if ( best < v[i] ) {
+                             best = v[i];
+                             dev->osc6_bits_upd = BASE_OSC_BITS + i;
+                        }
+               }
             }
             else {
                 applog(LOG_WARNING, "parsing error for token %s, sscanf returns %d", t, tc);
@@ -829,7 +838,7 @@ static int64_t try_scanHash(struct thr_info *thr)
             }
 
             if ( ema_ghash <= 1.0  && dev->csw_back > 31 ) dev->alerts ++; else dev->alerts = 0;
-
+            // сброс чипа, если три цикла подряд слишком маленький хэшрейт
             if ( 3 < dev->alerts ) {
                 printf(CL_LT_RED);
                 applog(LOG_WARNING, "Chip_id %d FREQ CHANGE-RESTORE", chip);
