@@ -271,12 +271,7 @@ int next_prefetch(int i) {
     return ( i + 1 ) % PREFETCH_WORKS;
 }
 
-void save_opt_conf (struct bitfury_device *devices, int chip_count) {
-    FILE *fcfg;
-    char filename[PATH_MAX];
-
-    if (!chip_count) return;
-
+void get_opt_filename(char *filename) {
     if ( getenv("HOME") && *getenv("HOME") ) {
             strcpy(filename, getenv("HOME"));
             strcat(filename, "/");
@@ -288,6 +283,73 @@ void save_opt_conf (struct bitfury_device *devices, int chip_count) {
     strncat(filename, ".cgminer/", PATH_MAX);
     mkdir(filename, 0777);
     strncat(filename, "bitfury_opt.conf", PATH_MAX);
+}
+
+
+void load_opt_conf (struct bitfury_device *devices, int chip_count) {
+    char filename[PATH_MAX];
+    get_opt_filename(filename);
+    applog(LOG_WARNING, "loading opt configuration from %s ", filename);
+    FILE *fcfg = fopen(filename, "r");
+
+    int lcount = 0;
+
+    while ( ! feof(fcfg) ) {
+        char line [1024] = { 0 };
+        fgets (line, 1024, fcfg);
+        char *s = strstr(line, "slot_");
+        if ( !s ) continue;
+        lcount ++;
+
+        s[4] = 32; // 'slot_XX=' -> 'slot XX='
+        char *t = strtok(s, "=");
+        int n_slot = 0, n_chip = -1;
+
+        if (!t || strlen(t) < 1 ) {
+            applog(LOG_WARNING, "cannot locate = in line %s", s);
+            continue;
+        }
+
+        applog(LOG_WARNING, "parsing line %d, 1-st token: \t%s", lcount, t);
+
+        char tmp[100];
+
+        if ( sscanf (s, "%s %X", tmp, &n_slot) < 2 ) {
+            applog(LOG_WARNING, "parsing error at slot number detect");
+            continue;
+        }
+
+        t = strtok(NULL, ";");
+        while (t && strlen(t) > 10 ) {
+            applog(LOG_WARNING, "parsing line %d, next token: %35s", lcount, t);
+
+            int v[4];
+            int tc = sscanf(t, "%d:[%d,%d,%d,%d]@{%*.2f,%*.2f,%*.2f,%*.2f}", &n_chip, &v[0], &v[1], &v[2], &v[3]);
+            if ( tc >= 5 ) {
+
+                if ( n_chip < 0 ) break;
+                int i = bitfury_findChip (devices, chip_count, n_slot, n_chip);
+                if ( i >= 0 )
+                    memcpy( devices[i].cch_stat, v, sizeof(v) ); // update stat
+            }
+            else {
+                applog(LOG_WARNING, "parsing error for token %s, sscanf returns %d", t, tc);
+                break;
+            }
+            t = strtok(NULL, ";");
+        }  // while 2
+    } // while 1
+
+    fclose(fcfg);
+}
+
+
+void save_opt_conf (struct bitfury_device *devices, int chip_count) {
+    FILE *fcfg;
+    char filename[PATH_MAX];
+    if (!chip_count) return;
+
+    get_opt_filename(filename);
     applog(LOG_WARNING, "dumping opt configuration to %s ", filename);
 
     fcfg = fopen(filename, "w");
@@ -321,6 +383,8 @@ void save_opt_conf (struct bitfury_device *devices, int chip_count) {
     fprintf(fcfg, "slot_%X=%s\n", last_slot, line);
     fclose(fcfg);
 }
+
+
 
 
 inline int works_prefetched (struct cgpu_info *cgpu) {
@@ -531,8 +595,10 @@ static int64_t try_scanHash(struct thr_info *thr)
     cgtime(&now);
 
 
-    if ( loops_count == 1 )
-         init_devices(devices, chip_count);
+    if ( loops_count == 1 ) {
+         init_devices  (devices, chip_count);
+         load_opt_conf (devices, chip_count);
+    }
 
 
     if ( loops_count > 2 ) {
