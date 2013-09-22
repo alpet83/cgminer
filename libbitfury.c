@@ -206,17 +206,24 @@ void set_freq(int bits) {
 	unsigned char *osc6;
 	int i;
 
+    if (bits < 50)
+        config_reg(3,1);
+    else
+        config_reg(3,0);
+
 	osc6 = (unsigned char *)&freq;
 	freq = (1ULL << bits) - 1ULL;
 
-	spi_emit_data(0x6000, (void*)osc6, 8); /* Program internal on-die slow oscillator frequency */
-	config_reg(4,1); /* Enable slow oscillator */
+
+    spi_emit_data(0x6000, (void*)osc6, 8); /* Program internal on-die slow oscillator frequency */
+    //   config_reg(2, 0);
+    config_reg(4, 1); /* Enable slow oscillator */
 }
 
-void send_reinit(int slot, int chip_n, int n) {
+void send_reinit(int slot, int chip_count, int n) {
 	spi_clear_buf();
 	spi_emit_break();
-	spi_emit_fasync(chip_n);
+    spi_emit_fasync(chip_count);
 	set_freq(n);
 	send_conf();
 	send_init();
@@ -225,20 +232,21 @@ void send_reinit(int slot, int chip_n, int n) {
 	tm_i2c_clear_oe(slot);
 }
 
-void send_shutdown(int slot, int chip_n) {
+void send_shutdown(int slot, int chip_count) {
 	spi_clear_buf();
 	spi_emit_break();
-	spi_emit_fasync(chip_n);
+    spi_emit_fasync(chip_count);
 	config_reg(4,0); /* Disable slow oscillator */
+    config_reg(2,0); /* Disable fast oscillator */
 	tm_i2c_set_oe(slot);
 	spi_txrx(spi_gettxbuf(), spi_getrxbuf(), spi_getbufsz());
 	tm_i2c_clear_oe(slot);
 }
 
-void send_freq(int slot, int chip_n, int bits) {
+void send_freq(int slot, int chip_count, int bits) {
 	spi_clear_buf();
 	spi_emit_break();
-	spi_emit_fasync(chip_n);
+    spi_emit_fasync(chip_count);
 	set_freq(bits);
 	tm_i2c_set_oe(slot);
 	spi_txrx(spi_gettxbuf(), spi_getrxbuf(), spi_getbufsz());
@@ -275,7 +283,7 @@ int get_diff(unsigned int *newbuf, unsigned int *oldbuf) {
 		return counter;
 }
 
-int detect_chip(int chip_n) {
+int detect_chip(int chip_count) {
 	int i;
 	unsigned newbuf[17], oldbuf[17];
 	unsigned ocounter;
@@ -285,15 +293,10 @@ int detect_chip(int chip_n) {
 	memset(newbuf, 0, 17 * 4);
 	memset(oldbuf, 0, 17 * 4);
 
-	ms3_compute(&atrvec[0]);
-	ms3_compute(&atrvec[20]);
-	ms3_compute(&atrvec[40]);
-	spi_init();
-
 
 	spi_clear_buf();
 	spi_emit_break(); /* First we want to break chain! Otherwise we'll get all of traffic bounced to output */
-	spi_emit_fasync(chip_n);
+    spi_emit_fasync(chip_count);
 	set_freq(52);  //54 - 3F, 53 - 1F
 	send_conf();
 	send_init();
@@ -306,10 +309,10 @@ int detect_chip(int chip_n) {
 
 		spi_clear_buf();
 		spi_emit_break();
-		spi_emit_fasync(chip_n);
+        spi_emit_fasync(chip_count);
 		spi_emit_data(0x3000, (void*)&atrvec[0], 19*4);
 		spi_txrx(spi_gettxbuf(), spi_getrxbuf(), spi_getbufsz());
-		memcpy(newbuf, spi_getrxbuf() + 4 + chip_n, 17*4);
+        memcpy(newbuf, spi_getrxbuf() + 4 + chip_count, 17*4);
 
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t1);
 		counter = get_counter(newbuf, oldbuf);
@@ -345,6 +348,11 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
 		return(1);
 	}
 
+	ms3_compute(&atrvec[0]);
+	ms3_compute(&atrvec[20]);
+	ms3_compute(&atrvec[40]);
+	spi_init();
+
 	for (i = 0; i < BITFURY_MAXBANKS; i++) {
 		slot_on[i] = 0;
 	}
@@ -359,19 +367,39 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
 
 	for (i = 0; i < BITFURY_MAXBANKS; i++) {
 //		if (slot_on[i]) {
-			int chip_n = 0;
-			int chip_detected;
+            int chip_count = 0;
+            int cnt_on_slot = 0;
+            int chip_detected = 0;
+
+            char num_chip[16] = { 0 };
+            char slot_line [1024] = { 0 };
+
 			tm_i2c_set_oe(i);
 			do {
-				chip_detected = detect_chip(chip_n);
+                strcpy (num_chip, "   ");
+                chip_detected = detect_chip(chip_count);
+
+                if (!chip_detected && cnt_on_slot)
+                {
+                    applog(LOG_WARNING, "BITFURY slot: 0x%02X, chip #%X not detected !!!", i, n);
+                    chip_detected = detect_chip(chip_count);
+                }
+
 				if (chip_detected) {
-					applog(LOG_WARNING, "BITFURY slot: %d, chip #%d detected", i, n);
+                    // applog(LOG_WARNING, "BITFURY slot: 0x%02X, chip #%X detected", i, n);
+                    snprintf ( num_chip, 15, "%02X ", chip_count );
 					devices[n].slot = i;
-					devices[n].fasync = chip_n;
-					n++;
-					chip_n++;
+                    devices[n].fasync = chip_count;
+					n++;					
+                    cnt_on_slot ++;
 				}
-			} while (chip_detected);
+
+                strncat(slot_line, num_chip, 1023);
+                chip_count++;
+            } while (chip_count < BITFURY_BANKCHIPS);
+
+            if (cnt_on_slot) applog(LOG_WARNING, "BITFURY slot 0x%02X, chips detected: %s = %d", i, slot_line, cnt_on_slot);
+
 			tm_i2c_clear_oe(i);
 //		}
 	}
@@ -382,9 +410,9 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
 	//return 1;
 }
 
-int libbitfury_shutdownChips(struct bitfury_device *devices, int chip_n) {
+int libbitfury_shutdownChips(struct bitfury_device *devices, int chip_count) {
 	int i;
-	for (i = 0; i < chip_n; i++) {
+    for (i = 0; i < chip_count; i++) {
 		send_shutdown(devices[i].slot, devices[i].fasync);
 	}
 	tm_i2c_close();
@@ -465,12 +493,19 @@ void work_to_payload(struct bitfury_payload *p, struct work *w) {
 	p->nbits = bswap_32(*(unsigned *)(flipped_data + 72));
 }
 
-int libbitfury_sendHashData(struct bitfury_device *bf, int chip_n) {
+int libbitfury_sendHashData(struct thr_info *thr, struct bitfury_device *bf, int chip_count) {
 	int chip_id;
 	int buf_diff;
 	static unsigned second_run;
 
-	for (chip_id = 0; chip_id < chip_n; chip_id++) {
+    int delay = 1450 / chip_count; // вписать планировку всех чипов в среднее время на задание
+
+    extern unsigned loops_count;
+
+
+    for (chip_id = 0; chip_id < chip_count; chip_id++) {
+        if ( loops_count < 10 ) nmsleep(delay);
+
 		unsigned char *hexstr;
 		struct bitfury_device *d = bf + chip_id;
 		unsigned *newbuf = d->newbuf;
@@ -484,6 +519,10 @@ int libbitfury_sendHashData(struct bitfury_device *bf, int chip_n) {
 		int i;
 		int chip = d->fasync;
 		int slot = d->slot;
+
+
+
+
 
 		memcpy(atrvec, p, 20*4);
 		ms3_compute(atrvec);
@@ -552,34 +591,25 @@ int libbitfury_sendHashData(struct bitfury_device *bf, int chip_n) {
 					if ((newbuf[i] & 0xFF) == 0xE0)
 						continue;
 					pn = decnonce(newbuf[i]);
-					s |= rehash(op->midstate, op->m7, op->ntime, op->nbits, pn) ? pn : 0;
-					s |= rehash(op->midstate, op->m7, op->ntime, op->nbits, pn-0x00400000) ? pn - 0x00400000 : 0;
-					s |= rehash(op->midstate, op->m7, op->ntime, op->nbits, pn-0x00800000) ? pn - 0x00800000 : 0;
-					s |= rehash(op->midstate, op->m7, op->ntime, op->nbits, pn+0x02800000) ? pn + 0x02800000 : 0;
-					s |= rehash(op->midstate, op->m7, op->ntime, op->nbits, pn+0x02C00000) ? pn + 0x02C00000 : 0;
-					s |= rehash(op->midstate, op->m7, op->ntime, op->nbits, pn+0x00400000) ? pn + 0x00400000 : 0;
+					if(rehash(op->midstate, op->m7, op->ntime, op->nbits, pn)) s = pn;
+					else if(rehash(op->midstate, op->m7, op->ntime, op->nbits, pn-0x00400000)) s = pn - 0x00400000;
+					else if(rehash(op->midstate, op->m7, op->ntime, op->nbits, pn-0x00800000)) s = pn - 0x00800000;
+					else if(rehash(op->midstate, op->m7, op->ntime, op->nbits, pn+0x02800000)) s = pn + 0x02800000;
+					else if(rehash(op->midstate, op->m7, op->ntime, op->nbits, pn+0x02C00000)) s = pn + 0x02C00000;
+					else if(rehash(op->midstate, op->m7, op->ntime, op->nbits, pn+0x00400000)) s = pn + 0x00400000;
 					if (s) {
-						int k;
-						int dup = 0;
-						for (k = 0; k < results_num; k++) {
-							if (results[k] == bswap_32(s)) {
-								dup = 1;
-							}
-						}
-						if (!dup) {
-							results[results_num++] = bswap_32(s);
-							found++;
-						}
+						results[results_num++] = bswap_32(s);
+						found++;
 					}
 
 					s = 0;
 					pn = decnonce(newbuf[i]);
-					s |= rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn) ? pn : 0;
-					s |= rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn-0x400000) ? pn - 0x400000 : 0;
-					s |= rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn-0x800000) ? pn - 0x800000 : 0;
-					s |= rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn+0x2800000)? pn + 0x2800000 : 0;
-					s |= rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn+0x2C00000)? pn + 0x2C00000 : 0;
-					s |= rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn+0x400000) ? pn + 0x400000 : 0;
+					if(rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn)) s = pn;
+					else if(rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn-0x00400000)) s = pn - 0x00400000;
+					else if(rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn-0x00800000)) s = pn - 0x00800000;
+					else if(rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn+0x02800000)) s = pn + 0x02800000;
+					else if(rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn+0x02C00000)) s = pn + 0x02C00000;
+					else if(rehash(o2p->midstate, o2p->m7, o2p->ntime, o2p->nbits, pn+0x00400000)) s = pn + 0x00400000;
 					if (s) {
 						d->old_nonce = bswap_32(s);
 						found++;
@@ -587,19 +617,20 @@ int libbitfury_sendHashData(struct bitfury_device *bf, int chip_n) {
 
 					s = 0;
 					pn = decnonce(newbuf[i]);
-					s |= rehash(p->midstate, p->m7, p->ntime, p->nbits, pn) ? pn : 0;
-					s |= rehash(p->midstate, p->m7, p->ntime, p->nbits, pn-0x400000) ? pn - 0x400000 : 0;
-					s |= rehash(p->midstate, p->m7, p->ntime, p->nbits, pn-0x800000) ? pn - 0x800000 : 0;
-					s |= rehash(p->midstate, p->m7, p->ntime, p->nbits, pn+0x2800000)? pn + 0x2800000 : 0;
-					s |= rehash(p->midstate, p->m7, p->ntime, p->nbits, pn+0x2C00000)? pn + 0x2C00000 : 0;
-					s |= rehash(p->midstate, p->m7, p->ntime, p->nbits, pn+0x400000) ? pn + 0x400000 : 0;
+					if(rehash(p->midstate, p->m7, p->ntime, p->nbits, pn)) s = pn;
+					else if(rehash(p->midstate, p->m7, p->ntime, p->nbits, pn-0x00400000)) s = pn - 0x00400000;
+					else if(rehash(p->midstate, p->m7, p->ntime, p->nbits, pn-0x00800000)) s = pn - 0x00800000;
+					else if(rehash(p->midstate, p->m7, p->ntime, p->nbits, pn+0x02800000)) s = pn + 0x02800000;
+					else if(rehash(p->midstate, p->m7, p->ntime, p->nbits, pn+0x02C00000)) s = pn + 0x02C00000;
+					else if(rehash(p->midstate, p->m7, p->ntime, p->nbits, pn+0x00400000)) s = pn + 0x00400000;
 					if (s) {
 						d->future_nonce = bswap_32(s);
 						found++;
 					}
 					if (!found) {
 						//printf("AAA Strange: %08x, chip_id: %d\n", pn, chip_id);
-						d->strange_counter++;
+						d->hw_errors++;
+						inc_hw_errors(thr);
 					}
 				}
 			}
