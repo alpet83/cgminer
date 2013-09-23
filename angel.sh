@@ -7,13 +7,13 @@ DATE=`date +%F_%H-%M`
 FREEMEM=`head /proc/meminfo | grep MemFree | awk '{ print $2 }'`
 
 if [ $FREEMEM  -lt 50000  ]; then
-   echo 'Low freeMemory, trying kill cgminer ' >> /var/log/mining.log
-   killall cgminer
+   echo 'Low freeMemory, trying restarting cgminer ' >> /var/log/mining.log
+   mine.sh
 fi
 
 if [ `ps aux | grep cgminer | grep -v grep | wc -l` -eq 0 ]; then 
     echo $DATE' cgminer not found, restarting ' >> /var/log/mining.log
-    /sbin/mine.sh; 
+    mine.sh
 else
     echo $DATE' cgminer active, freeMemory = '$FREEMEM >> /var/log/mining.log
 fi
