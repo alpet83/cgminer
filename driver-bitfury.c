@@ -188,7 +188,15 @@ inline void test_reclock(PBITFURY_DEVICE dev) {
 void init_devices (struct bitfury_device *devices, int chip_count) {
     int i;
     PBITFURY_DEVICE dev;
-// #define FAST_CLOCK
+// #define FAST_CLOCK1
+
+#ifdef FAST_CLOCK1
+        #define BASE_OSC_BITS 51
+        #define LOW_HASHRATE 2.7
+#else
+        #define BASE_OSC_BITS 53
+        #define LOW_HASHRATE 1.5
+#endif
 
 
     for (i = 0; i < chip_count; i++) {
@@ -210,29 +218,6 @@ void init_devices (struct bitfury_device *devices, int chip_count) {
         // 0x036, 0x136, 0x236, 0x336, 0x436, 0x536, 0x636
 
 
-#ifdef FAST_CLOCK
-        #define BASE_OSC_BITS 51
-        #define LOW_HASHRATE 2.7
-        int slot_0 [] = { 0x035, 0x135, 0x236, 0x435, 0x635, 0x735, -1 }; // 0x035, 0x136, 0x235,
-        int slot_1 [] = { 0x336, -1 };  // 0x036, 0x136, 0x235, 0x335, 0x734,
-        int slot_2 [] = { 0x335, 0x536, -1 }; // 0x036, 0x135, 0x235, 0x333, 0x436, 0x534, 0x634,
-        int slot_3 [] = { 0x535, 0x635, -1 }; // 0x036, 0x136, 0x235, 0x335, 0x734,
-        int slot_4 [] = { 0x234, 0x533, -1 }; // 0x035, 0x135, 0x333, 0x535,
-        int slot_5 [] = { 0x035, 0x235, 0x335, 0x435, 0x535, 0x635, 0x735, -1 }; // 0x036, 0x433, 0x535, 0x635, 0x734,
-        int slot_6 [] = { 0x035, 0x636, -1 }; // 0x034, 0x135, 0x234, 0x335, 0x435, 0x635, 0x735,
-        int slot_7 [] = { -1 }; // 0x036, 0x134, 0x234, 0x336, 0x435, 0x536, 0x735,
-        int slot_8 [] = { -1 }; // 0x035, 0x134, 0x235, 0x336, 0x433, 0x536, 0x634, 0x733,
-        int slot_9 [] = { 0x035, 0x235, 0x335, 0x435, 0x535, 0x635, 0x735, -1 }; // 0x035, 0x134, 0x236, 0x335, 0x435, 0x535, 0x635, 0x736,
-        int slot_A [] = { 0x035, 0x135, 0x235, 0x335, 0x435, 0x535, 0x635, 0x735, -1 }; // 0x034, 0x135, 0x234, 0x334, 0x433, 0x634,
-        int slot_B [] = { -1 }; // absent
-        int slot_C [] = { -1 }; // 0x035, 0x235, 0x335, 0x435, 0x535, 0x735,
-        int slot_D [] = { 0x035, -1 }; // 0x035, 0x135, 0x235, 0x335, 0x433, 0x535, 0x734,
-        int slot_E [] = { -1 }; // 0x135, 0x535,
-        int slot_F [] = { 0x335, 0x536, 0x734, -1 }; // 0x036, 0x135, 0x235, 0x435, 0x535, 0x635, 0x735,
-
-#else
-        #define BASE_OSC_BITS 53
-        #define LOW_HASHRATE 1.5
         int slot_0 [] = { -1 };
         int slot_1 [] = { -1 };
         int slot_2 [] = { -1 };
@@ -250,7 +235,6 @@ void init_devices (struct bitfury_device *devices, int chip_count) {
         int slot_E [] = { -1 };
         int slot_F [] = { -1 };
 
-#endif
         int *all_slots[] = { slot_0, slot_1, slot_2, slot_3, slot_4, slot_5, slot_6, slot_7, slot_8, slot_9, slot_A, slot_B, slot_C, slot_D, slot_E, slot_F, NULL };
 
         for (i = 0; ( i < BITFURY_MAXBANKS ) && all_slots[i]; i ++)
@@ -408,33 +392,35 @@ static bool bitfury_fill(struct cgpu_info *cgpu) {
     bool ret;
     int i;
 
-    /*
-    struct work* wrk, *tmp;
+    struct work* nw = NULL;
 
-    HASH_ITER(hh, cgpu->queued_work, wrk, tmp) {
-         if (!wrk->queued) cnt ++;
-    }
+    int max_need = cgpu->chip_count / 3 + 1;
 
-    return ( cnt > 170 ); // */
+    if (max_need > PREFETCH_WORKS)
+        max_need = PREFETCH_WORKS;
 
+    int now_need =  ( max_need - works_prefetched(cgpu) );
+    ret = ( now_need <= 0 ); // need find optimal values
 
-    struct work* nw = get_queued (cgpu);
-    if (!nw) return true;
-
-    rd_lock(&cgpu->qlock); //
+    if (ret) return ret;
+    nw = get_queued (cgpu);
+    if (NULL == nw) return false;
+    rd_lock(&cgpu->qlock); // don't return before unlock(!)
     for (i = 0; i < PREFETCH_WORKS; i ++)  {
         if ( NULL == cgpu->prefetch [cgpu->w_prefetch] ) {
+            nw->debug_stage = 128;
             cgpu->prefetch [cgpu->w_prefetch] = nw;
+            now_need --;
             break;
         }
         cgpu->w_prefetch = next_prefetch ( cgpu->w_prefetch );
     }
-    int max_need = cgpu->chip_count / 3 + 1;
-    if (max_need > PREFETCH_WORKS)
-        max_need = PREFETCH_WORKS;
 
     ret = ( works_prefetched(cgpu) >= max_need ); // need find optimal values
     rd_unlock(&cgpu->qlock);
+
+
+
     return ret;
     // */
 }
@@ -500,6 +486,7 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
                 nonces_cnt += bitfury_submitNonce(thr, dev, &now, work, bswap_32(dev->future_nonce));
 
             if (o2work) {
+                o2work->debug_stage = 245;
                 work_completed(thr->cgpu, o2work);
                 double diff = tv_diff (&now, &dev->work_start);
                 dev->work_end = now;
@@ -510,8 +497,12 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
                     dev->work_median = dev->work_median * 0.993 + diff *0.007; // EMA
             }
             // сдвиг миниочереди
-            dev->o2work = dev->owork;
+            if (dev->o2work) dev->o2work->debug_stage = 193;
+            if (dev->owork)  dev->owork->debug_stage = 192;
+            if (dev->work)   dev->work->debug_stage = 191;
+            dev->o2work = dev->owork;            
             dev->owork = dev->work;
+
             dev->work = NULL;
             hashes += 0xffffffffull * nonces_cnt;
             dev->matching_work += nonces_cnt;
@@ -534,6 +525,7 @@ inline int work_push(struct thr_info *thr, PBITFURY_DEVICE dev) {
            if (NULL == dev->work) return 0;
         }
         cgtime(&dev->work_start);
+        dev->work->debug_stage = 190;
         work_to_payload(&(dev->payload), dev->work);
 
         if (dev->work_end.tv_sec > 0) {
@@ -891,7 +883,8 @@ static int64_t try_scanHash(struct thr_info *thr)
                     } // for
 
                     // подведение итогов соревнования
-                    dev->cch_stat[new_clk] ++;
+                    // если произошла смена к удачной конфигурации или было мало регистраций выбора
+                    if ( ridx != new_clk || dev->cch_stat[new_clk] < 2 ) dev->cch_stat[new_clk] ++;
                 }
 
 
@@ -1111,8 +1104,15 @@ static void get_options(struct cgpu_info *cgpu)
     size_t max = 0;
     int i, slot, fs, bits, chip, def_bits;
 
+    int default_bits = BASE_OSC_BITS + 1;
+
+#ifdef FAST_CLOCK1
+    default_bits = 53;
+#endif
+
+
     for(i=0; i<cgpu->chip_count; i++)
-        cgpu->devices[i].osc6_bits_upd = 54; // this is default value
+        cgpu->devices[i].osc6_bits_upd = default_bits; // this is default value
 
     if (opt_bitfury_clockbits == NULL) {
         buf[0] = '\0';

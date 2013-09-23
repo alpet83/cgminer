@@ -1,3 +1,24 @@
+*** METABANK BITFURY USERS ATTENTION ***
+Simple deploy steps via SSH:
+1) login as root
+2) mkdir /home/pi/test2
+3) cd /home/pi/test2
+4) git clone https://github.com/alpet83/cgminer
+5) cd cgminer
+6) chmod +xxx *.sh
+7) ./autogen.sh --enable-bitfury --disable-opencl CFLAGS='-g3 -O2 -DDEBUG'
+8) ./build.sh 
+9) disable original cgminer service or rename file /usr/local/bin/cgminer
+A) mv mine_start.sh /usr/local/sbin 
+B) mv mine.sh /usr/local/sbin
+C) mine.sh
+D) screen -r 
+
+Also you can choice any dir for this fork, but after edit path in mine_start.sh 
+For voltmoded devices just uncomment #define FAST_CLOCK1 in driver-bitfury.c and run ./build.sh 
+
+******************************************
+
 This is a multi-threaded multi-pool GPU, FPGA and ASIC miner with ATI GPU
 monitoring, (over)clocking and fanspeed support for bitcoin and derivative
 coins. Do not use on multiple block chains at the same time!

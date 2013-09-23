@@ -1259,6 +1259,8 @@ struct work {
 	struct timeval	tv_work_start;
 	struct timeval	tv_work_found;
 	char		getwork_mode;
+
+    int     debug_stage;
 };
 
 #ifdef USE_MODMINER 

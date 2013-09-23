@@ -303,8 +303,21 @@ struct sigaction termhandler, inthandler;
 
 struct thread_q *getq;
 
+
+static int alloc_works = 0;
+static int freed_works = 0;
 static int total_work;
+static int total_queued;
 struct work *staged_work = NULL;
+
+#define STATIC_WORKS 2048
+#ifdef  STATIC_WORKS
+struct work *works_pool [STATIC_WORKS];
+static int work_aidx;
+static int work_fidx;
+#endif
+
+
 
 struct schedtime {
 	bool enable;
@@ -1524,38 +1537,87 @@ static void calc_midstate(struct work *work)
 	endian_flip32(work->midstate, work->midstate);
 }
 
-static struct work *make_work(void)
-{
-	struct work *work = calloc(1, sizeof(struct work));
-
-	if (unlikely(!work))
-		quit(1, "Failed to calloc work in make_work");
-
-	cg_wlock(&control_lock);
-	work->id = total_work++;
-	cg_wunlock(&control_lock);
-
-	return work;
-}
-
 /* This is the central place all work that is about to be retired should be
  * cleaned to remove any dynamically allocated arrays within the struct */
 void clean_work(struct work *work)
 {
-	free(work->job_id);
-	free(work->nonce2);
-	free(work->ntime);
-	free(work->gbt_coinbase);
-	free(work->nonce1);
-	memset(work, 0, sizeof(struct work));
+    free(work->job_id);
+    free(work->nonce2);
+    free(work->ntime);
+    free(work->gbt_coinbase);
+    free(work->nonce1);
+    memset(work, 0, sizeof(struct work));
 }
+
+
+static struct work *make_work(void)
+{
+
+#ifdef STATIC_WORKS
+    static char overflow[1024];
+    int idx = work_aidx++;
+    if ( NULL == works_pool[idx] )
+         works_pool[idx] = calloc (1, sizeof(struct work));
+
+    struct work *work = works_pool[idx];
+    if (work_aidx >= STATIC_WORKS)
+        work_aidx = 0;
+
+    if ( work->id > 0 )  {
+        char msg [16];
+        unsigned flags = 0;
+        if (work->mined)  flags |= 1;
+        if (work->clone)  flags |= 2;
+        if (work->cloned) flags |= 4;
+        if (work->block)  flags |= 8;
+        if (work->queued) flags |= 16;
+
+        sprintf (msg, "%d:%02X=%02X ", work->id, flags, work->debug_stage);
+        strncat (overflow, msg, 1024);
+        if ( strlen(overflow) > 500 ) {
+            applog(LOG_WARNING, "DANGER!!! total_queued = %5d, leaked works id: { %s } ", total_queued, overflow);
+            overflow [0] = 0;
+        }
+        // clean_work (work);
+        // free(work);
+
+        // replace work
+        works_pool[idx] = work = calloc (1, sizeof(struct work));
+    }
+
+
+#else
+    struct work *work = calloc(1, sizeof(struct work));
+    alloc_works ++;
+    if (alloc_works - freed_works >= 1000) {
+        applog (LOG_WARNING, "#MEM_LEAK?: alloc_works = %5d, freed_works = %5d ", alloc_works, freed_works );
+        alloc_works -= 1000;
+    }
+#endif
+
+	if (unlikely(!work))
+		quit(1, "Failed to calloc work in make_work");
+
+
+
+	cg_wlock(&control_lock);
+	work->id = total_work++;
+    work->debug_stage = 1;
+	cg_wunlock(&control_lock);
+	return work;
+}
+
 
 /* All dynamically allocated work structs should be freed here to not leak any
  * ram from arrays allocated within the work struct */
 void free_work(struct work *work)
 {
 	clean_work(work);
+#ifdef STATIC_WORKS
+#else
 	free(work);
+    freed_works ++;
+#endif
 }
 
 /* Generate a GBT coinbase from the existing GBT variables stored. Must be
@@ -2396,11 +2458,11 @@ share_result(json_t *val, json_t *res, json_t *err, const struct work *work,
 		applog(LOG_DEBUG, "PROOF OF WORK RESULT: true (yay!!!)");
 		if (!QUIET) {
 			if (total_pools > 1)
-				applog(LOG_NOTICE, "Accepted %s %s %d pool %d %s%s",
-				       hashshow, cgpu->drv->name, cgpu->device_id, work->pool->pool_no, resubmit ? "(resubmit)" : "", worktime);
+                applog(LOG_NOTICE, "#ACCEPTED_MP: %30s %s %d pool %d %s%s  TQ=%3d",
+                       hashshow, cgpu->drv->name, cgpu->device_id, work->pool->pool_no, resubmit ? "(resubmit)" : "", worktime, total_queued);
 			else
-				applog(LOG_NOTICE, "Accepted %s %s %d %s%s",
-				       hashshow, cgpu->drv->name, cgpu->device_id, resubmit ? "(resubmit)" : "", worktime);
+                applog(LOG_NOTICE, "#ACCEPTED_SP: %30s %s %d %s%s  TQ=%3d",
+                       hashshow, cgpu->drv->name, cgpu->device_id, resubmit ? "(resubmit)" : "", worktime, total_queued);
 		}
 		sharelog("accept", work);
 		if (opt_shares && total_accepted >= opt_shares) {
@@ -2597,8 +2659,7 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 		else
 			outhash = bin2hex(rhash + 4, 4);
 		suffix_string(work->share_diff, diffdisp, 0);
-		sprintf(hashshow, "%s Diff %s/%d%s", outhash, diffdisp, intdiff,
-			work->block? " BLOCK!" : "");
+        sprintf(hashshow, "%s ShareDiff %7s/%5d%s ", outhash, diffdisp, intdiff, work->block? " BLOCK!" : "");
 		free(outhash);
 
 		if (opt_worktime) {
@@ -5668,6 +5729,7 @@ static struct work *get_work(struct thr_info *thr, const int thr_id)
 	work->thr_id = thr_id;
 	thread_reportin(thr);
 	work->mined = true;
+    work->debug_stage = 10;
 	return work;
 }
 
@@ -5971,7 +6033,7 @@ static void hash_sole_work(struct thr_info *mythr)
  * should be set under cgpu->qlock write lock to prevent it being dereferenced
  * while still in use. */
 static void fill_queue(struct thr_info *mythr, struct cgpu_info *cgpu, struct device_drv *drv, const int thr_id)
-{
+{    
 	do {
 		bool need_work;
 
@@ -5989,8 +6051,10 @@ static void fill_queue(struct thr_info *mythr, struct cgpu_info *cgpu, struct de
 		}
 		/* The queue_full function should be used by the driver to
 		 * actually place work items on the physical device if it
-		 * does have a queue. */
-	} while (!drv->queue_full(cgpu));
+         * does have a queue. */ }
+    while (!drv->queue_full(cgpu));
+    // */
+
 }
 
 /* This function is for retrieving one work item from the queued hashtable of
@@ -6002,6 +6066,9 @@ struct work *get_queued(struct cgpu_info *cgpu)
 	struct work *work, *tmp, *ret = NULL;
 
 	wr_lock(&cgpu->qlock);
+
+    total_queued = 0;
+
 	HASH_ITER(hh, cgpu->queued_work, work, tmp) {
 		if (!work->queued) {
 			work->queued = true;
@@ -6009,6 +6076,7 @@ struct work *get_queued(struct cgpu_info *cgpu)
 			ret = work;
 			break;
 		}
+        total_queued ++;
 	}
 	wr_unlock(&cgpu->qlock);
 
@@ -6057,8 +6125,9 @@ void work_completed(struct cgpu_info *cgpu, struct work *work)
 {
 	wr_lock(&cgpu->qlock);
 	if (work->queued)
-		cgpu->queued_count--;
+		cgpu->queued_count--;    
 	HASH_DEL(cgpu->queued_work, work);
+    work->queued = false;
 	wr_unlock(&cgpu->qlock);
 
 	free_work(work);

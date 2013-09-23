@@ -220,10 +220,10 @@ void set_freq(int bits) {
     config_reg(4, 1); /* Enable slow oscillator */
 }
 
-void send_reinit(int slot, int chip_count, int n) {
+void send_reinit(int slot, int chip_index, int n) {
 	spi_clear_buf();
 	spi_emit_break();
-    spi_emit_fasync(chip_count);
+    spi_emit_fasync(chip_index);
 	set_freq(n);
 	send_conf();
 	send_init();
@@ -232,10 +232,10 @@ void send_reinit(int slot, int chip_count, int n) {
 	tm_i2c_clear_oe(slot);
 }
 
-void send_shutdown(int slot, int chip_count) {
+void send_shutdown(int slot, int chip_index) {
 	spi_clear_buf();
 	spi_emit_break();
-    spi_emit_fasync(chip_count);
+    spi_emit_fasync(chip_index);
 	config_reg(4,0); /* Disable slow oscillator */
     config_reg(2,0); /* Disable fast oscillator */
 	tm_i2c_set_oe(slot);
@@ -243,10 +243,10 @@ void send_shutdown(int slot, int chip_count) {
 	tm_i2c_clear_oe(slot);
 }
 
-void send_freq(int slot, int chip_count, int bits) {
+void send_freq(int slot, int chip_index, int bits) {
 	spi_clear_buf();
 	spi_emit_break();
-    spi_emit_fasync(chip_count);
+    spi_emit_fasync(chip_index);
 	set_freq(bits);
 	tm_i2c_set_oe(slot);
 	spi_txrx(spi_gettxbuf(), spi_getrxbuf(), spi_getbufsz());
@@ -283,7 +283,7 @@ int get_diff(unsigned int *newbuf, unsigned int *oldbuf) {
 		return counter;
 }
 
-int detect_chip(int chip_count) {
+int detect_chip(int chip_index) {
 	int i;
 	unsigned newbuf[17], oldbuf[17];
 	unsigned ocounter;
@@ -296,7 +296,7 @@ int detect_chip(int chip_count) {
 
 	spi_clear_buf();
 	spi_emit_break(); /* First we want to break chain! Otherwise we'll get all of traffic bounced to output */
-    spi_emit_fasync(chip_count);
+    spi_emit_fasync(chip_index);
 	set_freq(52);  //54 - 3F, 53 - 1F
 	send_conf();
 	send_init();
@@ -309,10 +309,10 @@ int detect_chip(int chip_count) {
 
 		spi_clear_buf();
 		spi_emit_break();
-        spi_emit_fasync(chip_count);
+        spi_emit_fasync(chip_index);
 		spi_emit_data(0x3000, (void*)&atrvec[0], 19*4);
 		spi_txrx(spi_gettxbuf(), spi_getrxbuf(), spi_getbufsz());
-        memcpy(newbuf, spi_getrxbuf() + 4 + chip_count, 17*4);
+        memcpy(newbuf, spi_getrxbuf() + 4 + chip_index, 17*4);
 
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t1);
 		counter = get_counter(newbuf, oldbuf);
@@ -367,7 +367,7 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
 
 	for (i = 0; i < BITFURY_MAXBANKS; i++) {
 //		if (slot_on[i]) {
-            int chip_count = 0;
+            int chip_index = 0;
             int cnt_on_slot = 0;
             int chip_detected = 0;
 
@@ -377,26 +377,28 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
 			tm_i2c_set_oe(i);
 			do {
                 strcpy (num_chip, "   ");
-                chip_detected = detect_chip(chip_count);
+                chip_detected = detect_chip(chip_index);
 
                 if (!chip_detected && cnt_on_slot)
                 {
                     applog(LOG_WARNING, "BITFURY slot: 0x%02X, chip #%X not detected !!!", i, n);
-                    chip_detected = detect_chip(chip_count);
+                    chip_detected = detect_chip(chip_index);
                 }
 
 				if (chip_detected) {
                     // applog(LOG_WARNING, "BITFURY slot: 0x%02X, chip #%X detected", i, n);
-                    snprintf ( num_chip, 15, "%02X ", chip_count );
+                    snprintf ( num_chip, 15, "%02X ", chip_index );
 					devices[n].slot = i;
-                    devices[n].fasync = chip_count;
+                    devices[n].fasync = chip_index;
 					n++;					
                     cnt_on_slot ++;
 				}
+                else
+                    if (!chip_index) break; // если нулевой чип не найден, то и остальные искать бесполезно на практике
 
                 strncat(slot_line, num_chip, 1023);
-                chip_count++;
-            } while (chip_count < BITFURY_BANKCHIPS);
+                chip_index++;
+            } while (chip_index < BITFURY_BANKCHIPS);
 
             if (cnt_on_slot) applog(LOG_WARNING, "BITFURY slot 0x%02X, chips detected: %s = %d", i, slot_line, cnt_on_slot);
 
