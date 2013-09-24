@@ -6,7 +6,7 @@ Simple deploy steps via SSH:
 4) git clone https://github.com/alpet83/cgminer
 5) cd cgminer
 6) chmod +xxx *.sh
-7) ./autogen.sh --enable-bitfury --disable-opencl CFLAGS='-g3 -O2 -DDEBUG -funwind-tables' LDFLAGS='-rdynamic'
+7) ./autogen.sh --enable-bitfury --disable-opencl CFLAGS='-g3 -Os -DDEBUG -funwind-tables' LDFLAGS='-rdynamic'
 8) ./build.sh 
 9) disable original cgminer service or rename file /usr/local/bin/cgminer
 A) mv mine_start.sh /usr/local/sbin 
