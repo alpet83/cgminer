@@ -24,7 +24,9 @@
  *
 */
 
+
 #include "miner.h"
+#include <math.h>
 #include <unistd.h>
 #include <sha2.h>
 #include "libbitfury.h"
@@ -36,6 +38,7 @@
 #include <curses.h>
 #include "uthash.h"
 #include "driver-config.h"
+#include "memutil.h"
 
 #define GOLDEN_BACKLOG 5
 
@@ -80,7 +83,7 @@ static void bitfury_detect(void)
     signal(SIGSEGV, sig_handler);
     signal(SIGILL, sig_handler);
 
-    bitfury_info = calloc(1, sizeof(struct cgpu_info));
+    bitfury_info = safe_calloc(1, sizeof(struct cgpu_info), "bitfury_info in bitfury_detect");
     bitfury_info->drv = &bitfury_drv;
     bitfury_info->threads = 1;
 
@@ -587,10 +590,13 @@ static int64_t try_scanHash(struct thr_info *thr)
 
     static int last_chip = 0; // для кольцевого обхода по выдаче заданий
 
+    int chips_by_rate[50] = { 0 };
 
 
     int i;
     static stat_dumps = 0;
+
+
 
     loops_count ++;
     call_count ++;
@@ -620,7 +626,9 @@ static int64_t try_scanHash(struct thr_info *thr)
     last_call = now;
     int w_pushed = 0;
 
+    stat_memory_usage(0);
     hashes += works_receive(thr, devices, chip_count);
+    stat_memory_usage(1);
 
     // подготовка заданий для чипов
     for (chip = 0; chip < chip_count; chip++) {
@@ -651,8 +659,15 @@ static int64_t try_scanHash(struct thr_info *thr)
            last_chip = 0;
     }
 
+    stat_memory_usage(2);
+
     libbitfury_sendHashData(thr, devices, chip_count);
+
+    stat_memory_usage(3);
+
     hashes += works_receive(thr, devices, chip_count);
+
+    stat_memory_usage(4);
 
     cgtime(&now);
     now_mcs = tv2mcs (&now);
@@ -708,6 +723,7 @@ static int64_t try_scanHash(struct thr_info *thr)
 
             // if slot changed
             if (n_slot != last_slot) {
+            #ifdef BITFURY_ENABLE_SHORT_STAT
                 float slot_temp = tm_i2c_gettemp(n_slot) * 0.1;
                 float slot_vc0 = tm_i2c_getcore0(n_slot) * 1000;
                 float slot_vc1 = tm_i2c_getcore1(n_slot) * 1000;
@@ -728,6 +744,7 @@ static int64_t try_scanHash(struct thr_info *thr)
 
                 // sprintf(stat_lines[n_slot], "[%X] T:%3.0f | V: %4.0f %4.0f| ", n_slot, slot_temp, slot_vc0, slot_vc1);
                 sprintf(stat_lines[n_slot], "[%X] T:%3.0f | V: %4.2f %4.2f| ", n_slot, slot_temp, slot_vc0 / 1000, slot_vc1 / 1000);
+            #endif
                 last_slot = n_slot;
             }
 
@@ -782,7 +799,9 @@ static int64_t try_scanHash(struct thr_info *thr)
                 gh[dev->slot][chip % BITFURY_BANKCHIPS] = ema_ghash;
             }
 
-
+            i = (int) round ( ema_ghash * 10 );
+            if ( i >= 49 ) i = 49;
+            chips_by_rate [i] ++;
 
             char *cl_tag = " ";
             if ( ema_ghash >= 3 ) cl_tag = " +";
@@ -922,6 +941,17 @@ static int64_t try_scanHash(struct thr_info *thr)
             save_opt_conf(devices, chip_count);
 
 #ifdef BITFURY_ENABLE_SHORT_STAT
+        // printing histogram
+        for (i = 0; i < 50; i ++)
+            if ( chips_by_rate[i] ) {
+                int n;
+                sprintf(line, "%.1f = ", 0.1 * (float)i );
+                for (n = 0; n < chips_by_rate[i]; n ++)
+                    strncat(line, "*", 2048);
+
+                applog(LOG_WARNING, "%s                                             ", line);
+            }
+
         // sprintf(line, "vvvvwww SHORT stat %ds: wwwvvvv", short_stat);
         sprintf(line, "  ================== SHORT stat, elapsed %.3fs, no_work = %d, dump %d, call period = %.2f ms, count = %5d =================== ",
                                                  elps_mcs / 1e6, no_work, stat_dumps, call_period / 1000, call_count );
@@ -987,6 +1017,8 @@ static int64_t try_scanHash(struct thr_info *thr)
 
         applog(LOG_WARNING, "Median hash-rate saldo = %4.1f, seconds to long stat %5d, prefetched = %3d ", ghsm_saldo, long_stat - elapsed, pcount  );
         applog(LOG_WARNING, line);
+        malloc_stats();
+        // stat_memory_usage(256);
 #endif
         short_out_t = now.tv_sec;
 
@@ -1042,8 +1074,17 @@ static int64_t try_scanHash(struct thr_info *thr)
 }
 
 static int64_t bitfury_scanHash(struct thr_info *thr) {
+     struct timeval now;
+     double time_ms;
+     cgtime (&now);
+     time_ms = tv2mcs (&now) * 0.001;
      int64_t result = try_scanHash(thr);
-     if ( 0 == result ) nmsleep(BITFURY_SCANHASH_DELAY);
+     cgtime (&now);
+     time_ms = tv2mcs (&now) * 0.001 - time_ms; // how elapsed
+     if ( 0 == result ) nmsleep ( BITFURY_SCANHASH_DELAY - (int)time_ms ); // strict loop time
+     if (time_ms > 500)
+         applog(LOG_WARNING, "#PERF: scanHash loop complete in %.1f msec", time_ms);
+
      return result;
 }
 

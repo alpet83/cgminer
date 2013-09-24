@@ -44,7 +44,7 @@ cgminer_SOURCES	+= elist.h miner.h compat.h bench_block.h	\
 		   sha2.c sha2.h api.c usbutils.h
 
 cgminer_SOURCES	+= logging.c
-
+cgminer_SOURCES += memutil.h memutil.c
 # GPU sources, TODO: make them selectable
 # the GPU portion extracted from original main.c
 cgminer_SOURCES += driver-opencl.h driver-opencl.c

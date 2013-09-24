@@ -41,6 +41,7 @@
 #include "elist.h"
 #include "compat.h"
 #include "util.h"
+#include "memutil.h"
 
 bool successful_connect = false;
 struct timeval nettime;
@@ -586,10 +587,7 @@ char *bin2hex(const unsigned char *p, size_t len)
 	slen = len * 2 + 1;
 	if (slen % 4)
 		slen += 4 - (slen % 4);
-	s = calloc(slen, 1);
-	if (unlikely(!s))
-		quit(1, "Failed to calloc in bin2hex");
-
+    s = safe_calloc(slen, 1, "s in bin2hex");
 	for (i = 0; i < len; i++)
 		sprintf(s + (i * 2), "%02x", (unsigned int) p[i]);
 

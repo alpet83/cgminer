@@ -51,6 +51,7 @@
 #include "driver-opencl.h"
 #include "bench_block.h"
 #include "scrypt.h"
+#include "memutil.h"
 
 #ifdef USE_AVALON
 #include "driver-avalon.h"
@@ -310,15 +311,14 @@ static int total_work;
 static int total_queued;
 struct work *staged_work = NULL;
 
-#define STATIC_WORKS 2048
+// #define STATIC_WORKS 2048
 #ifdef  STATIC_WORKS
 struct work *works_pool [STATIC_WORKS];
 static int work_aidx;
 static int work_fidx;
 #endif
 
-static unsigned alloc_map[256] = { 0 };
-static size_t total_alloc = 0;
+// static size_t total_alloc = 0;
 
 
 
@@ -331,61 +331,6 @@ struct schedtime schedstart;
 struct schedtime schedstop;
 bool sched_paused;
 
-void* dbg_malloc(size_t size) {
-  static char buffer[1024];
-  static char s[10];
-  static size_t total_malloc = 0;
-
-  void *result = malloc (size);
-  sprintf(s, "%02X ", size);
-  strncat(buffer, s, 1024);
-
-  total_malloc += size;
-
-  if ( strlen(buffer) > 1000 ) {
-      applog(LOG_WARNING, "#MEMUSG(malloc): %d bytes = %s", total_malloc, buffer);
-      buffer [0] = 0;
-      total_malloc = 0;
-  }
-
-
-  return result;
-}
-
-
-void* dbg_calloc(size_t num, size_t size, char where) {
-  void *result  = calloc (num, size);
-
-  static char buffer[1024];
-  static char s[64];
-
-  // sprintf(s, "%dx%02X ", num, size);
-  // strncat(buffer, s, 1024);
-
-  total_alloc += size * num;
-  alloc_map[where] += size * num;
-
-  if ( total_alloc > 16 * 1024 ) {
-
-      buffer [0] = 0;
-      int i;
-      for (i = 0; i < 256; i ++)
-          if ( alloc_map[i] > 0 ) {
-              sprintf(s, "[%02X]= %d; ", i, alloc_map[i] );
-              strncat(buffer, s, 1024);
-          }
-      applog(LOG_WARNING, "#MEMUSG(calloc): total_alloc = %d, alloc_map: %s", total_alloc, buffer);
-      total_alloc = 0;
-  }
-
-  return result;
-}
-
-void dbg_free(void *ptr, size_t size, char where) {
-    free(ptr);
-    alloc_map [where] -= size;
-    total_alloc -= size;
-}
 
 static bool time_before(struct tm *tm1, struct tm *tm2)
 {
@@ -529,9 +474,9 @@ static void sharelog(const char*disposition, const struct work*work)
 
 	// timestamp,disposition,target,pool,dev,thr,sharehash,sharedata
 	rv = snprintf(s, sizeof(s), "%lu,%s,%s,%s,%s%u,%u,%s,%s\n", t, disposition, target, pool->rpc_url, cgpu->drv->name, cgpu->device_id, thr_id, hash, data);
-	free(target);
-	free(hash);
-	free(data);
+    cfree(target);
+    cfree(hash);
+    cfree(data);
 	if (rv >= (int)(sizeof(s)))
 		s[sizeof(s) - 1] = '\0';
 	else if (rv < 0) {
@@ -557,9 +502,8 @@ struct pool *add_pool(void)
 {
 	struct pool *pool;
 
-    pool = dbg_calloc(sizeof(struct pool), 1, 100);
-	if (!pool)
-		quit(1, "Failed to malloc pool in add_pool");
+    pool = safe_calloc(sizeof(struct pool), 1, "pool in add_pool");
+    // if (!pool) quit(1, );
 	pool->pool_no = pool->prio = total_pools;
 	pools = realloc(pools, sizeof(struct pool *) * (total_pools + 2));
 	pools[total_pools++] = pool;
@@ -773,7 +717,7 @@ static char *set_url(char *arg)
 	    strncmp(arg, "https://", 8)) {
 		char *httpinput;
 
-        httpinput = dbg_malloc(255);
+        httpinput = malloc(255);
 		if (!httpinput)
 			quit(1, "Failed to malloc httpinput");
 		strcpy(httpinput, "http://");
@@ -1441,7 +1385,7 @@ static char *load_config(const char *arg, void __maybe_unused *unused)
 	config = json_load_file(arg, &err);
 #endif
 	if (!json_is_object(config)) {
-        json_error = dbg_malloc(JSON_LOAD_ERROR_LEN + strlen(arg) + strlen(err.text));
+        json_error = malloc(JSON_LOAD_ERROR_LEN + strlen(arg) + strlen(err.text));
 		if (!json_error)
 			quit(1, "Malloc failure in json error");
 
@@ -1467,7 +1411,7 @@ void default_save_file(char *filename);
 
 static void load_default_config(void)
 {
-    cnfbuf = dbg_malloc(PATH_MAX);
+    cnfbuf = malloc(PATH_MAX);
 
 	default_save_file(cnfbuf);
 
@@ -1626,7 +1570,7 @@ static struct work *make_work(void)
         idx = work_aidx++;
 
     if ( NULL == works_pool[idx] ) {
-         works_pool[idx] = calloc (1, sizeof(struct work));
+        works_pool[idx] = safe_calloc (1, sizeof(struct work), "work");
          work_aidx = idx + 1;
     }
 
@@ -1653,23 +1597,18 @@ static struct work *make_work(void)
         // free(work);
 
         // replace work
-        works_pool[idx] = work = dbg_calloc (1, sizeof(struct work), 150);
+        works_pool[idx] = work = safe_calloc (1, sizeof(struct work), "work");
     }
 
 
 #else
-    struct work *work = dbg_calloc(1, sizeof(struct work));
+    struct work *work = safe_calloc(1, sizeof(struct work), "work");
     alloc_works ++;
     if (alloc_works - freed_works >= 1000) {
         applog (LOG_WARNING, "#MEM_LEAK?: alloc_works = %5d, freed_works = %5d ", alloc_works, freed_works );
         alloc_works -= 1000;
     }
 #endif
-
-	if (unlikely(!work))
-		quit(1, "Failed to calloc work in make_work");
-
-
 
 	cg_wlock(&control_lock);
 	work->id = total_work++;
@@ -1686,7 +1625,7 @@ void free_work(struct work *work)
 	clean_work(work);
 #ifdef STATIC_WORKS
 #else
-	free(work);
+    cfree(work);
     freed_works ++;
 #endif
 }
@@ -1705,7 +1644,7 @@ static void __build_gbt_coinbase(struct pool *pool)
 	/* We add 4 bytes of extra data corresponding to nonce2 of stratum */
 	cal_len = pool->coinbase_len + 1;
 	align_len(&cal_len);
-    coinbase = dbg_calloc(cal_len, 1, 0);
+    coinbase = safe_calloc(cal_len, 1, "coinbase in __build_gbt_coinbase");
 	hex2bin(coinbase, pool->coinbasetxn, 42);
 	extra_len = (uint8_t *)(coinbase + 41);
 	orig_len = *extra_len;
@@ -1714,7 +1653,7 @@ static void __build_gbt_coinbase(struct pool *pool)
 	*extra_len += 4;
 	hex2bin(coinbase + 42 + *extra_len, pool->coinbasetxn + 84 + (orig_len * 2), cbt_len - orig_len - 42);
 	pool->nonce2++;
-	free(pool->gbt_coinbase);
+    cfree(pool->gbt_coinbase);
 	pool->gbt_coinbase = coinbase;
 }
 
@@ -1731,7 +1670,7 @@ static bool __build_gbt_txns(struct pool *pool, json_t *res_val)
 	size_t cal_len;
 	int i;
 
-	free(pool->txn_hashes);
+    cfree(pool->txn_hashes);
 	pool->txn_hashes = NULL;
 	pool->gbt_txns = 0;
 
@@ -1744,9 +1683,8 @@ static bool __build_gbt_txns(struct pool *pool, json_t *res_val)
 	if (!pool->gbt_txns)
 		goto out;
 
-    pool->txn_hashes = dbg_calloc(32 * (pool->gbt_txns + 1), 1, 1);
-	if (unlikely(!pool->txn_hashes))
-        quit(1, "Failed to dbg_calloc txn_hashes in __build_gbt_txns");
+    pool->txn_hashes = safe_calloc(32 * (pool->gbt_txns + 1), 1, "txn_hashes in __build_gbt_txns");
+
 
 	for (i = 0; i < pool->gbt_txns; i++) {
 		json_t *txn_val = json_object_get(json_array_get(txn_array, i), "data");
@@ -1756,14 +1694,13 @@ static bool __build_gbt_txns(struct pool *pool, json_t *res_val)
 
 		cal_len = txn_len;
 		align_len(&cal_len);
-        txn_bin = dbg_calloc(cal_len, 1, 2);
-		if (unlikely(!txn_bin))
-            quit(1, "Failed to dbg_calloc txn_bin in __build_gbt_txns");
+        txn_bin = safe_calloc(cal_len, 1, "txn_bin in __build_gbt_txns");
+
 		if (unlikely(!hex2bin(txn_bin, txn, txn_len / 2)))
 			quit(1, "Failed to hex2bin txn_bin");
 
 		gen_hash(txn_bin, pool->txn_hashes + (32 * i), txn_len / 2);
-		free(txn_bin);
+        cfree(txn_bin);
 	}
 out:
 	return ret;
@@ -1774,9 +1711,7 @@ static unsigned char *__gbt_merkleroot(struct pool *pool)
 	unsigned char *merkle_hash;
 	int i, txns;
 
-    merkle_hash = dbg_calloc(32 * (pool->gbt_txns + 2), 1, 3);
-	if (unlikely(!merkle_hash))
-        quit(1, "Failed to dbg_calloc merkle_hash in __gbt_merkleroot");
+    merkle_hash = safe_calloc(32 * (pool->gbt_txns + 2), 1, "merkle_hash in __gbt_merkleroot");
 
 	gen_hash(pool->gbt_coinbase, merkle_hash, pool->coinbase_len);
 
@@ -3171,10 +3106,7 @@ static void sighandler(int __maybe_unused sig)
  * this pool. */
 static void recruit_curl(struct pool *pool)
 {
-    struct curl_ent *ce = dbg_calloc(sizeof(struct curl_ent), 1, 4);
-
-	if (unlikely(!ce))
-        quit(1, "Failed to dbg_calloc in recruit_curl");
+    struct curl_ent *ce = safe_calloc(sizeof(struct curl_ent), 1, "ce in recruit_curl");
 
 	ce->curl = curl_easy_init();
 	if (unlikely(!ce->curl))
@@ -3859,12 +3791,9 @@ static bool test_work_current(struct work *work)
 	/* Search to see if this block exists yet and if not, consider it a
 	 * new block and set the current block details to this one */
 	if (!block_exists(hexstr)) {
-        struct block *s = dbg_calloc(sizeof(struct block), 1, 5);
+        struct block *s = safe_calloc(sizeof(struct block), 1, "s in test_work_current");
 		int deleted_block = 0;
 		ret = false;
-
-		if (unlikely(!s))
-			quit (1, "test_work_current OOM");
 		strcpy(s->hash, hexstr);
 		s->block_no = new_blocks++;
 
@@ -3879,7 +3808,7 @@ static bool test_work_current(struct work *work)
 			oldblock = blocks;
 			deleted_block = oldblock->block_no;
 			HASH_DEL(blocks, oldblock);
-			free(oldblock);
+            cfree(oldblock);
 		}
 		HASH_ADD_STR(blocks, hash, s);
 		set_blockdiff(work);
@@ -4089,9 +4018,9 @@ static char *json_escape(char *str)
 	char *buf, *ptr;
 
 	/* 2x is the max, may as well just allocate that */
-    ptr = buf = dbg_malloc(strlen(str) * 2 + 1);
+    ptr = buf = malloc(strlen(str) * 2 + 1);
 
-    jeptr = dbg_malloc(sizeof(*jeptr));
+    jeptr = malloc(sizeof(*jeptr));
 
 	jeptr->buf = buf;
 	jeptr->next = jedata;
@@ -5274,7 +5203,7 @@ static void *stratum_sthread(void *userdata)
 		if (unlikely(!work))
 			quit(1, "Stratum q returned empty work");
 
-        sshare = dbg_calloc(sizeof(struct stratum_share), 1, 6);
+        sshare = safe_calloc(sizeof(struct stratum_share), 1, "share in stratum_sthread");
 		hash32 = (uint32_t *)work->hash;
 		submitted = false;
 
@@ -5341,8 +5270,8 @@ static void *stratum_sthread(void *userdata)
 
 		if (unlikely(!submitted)) {
 			applog(LOG_DEBUG, "Failed to submit stratum share, discarding");
-			free_work(work);
-			free(sshare);
+            free_work(work);
+            cfree(sshare);
 			pool->stale_shares++;
 			total_stale++;
 		}
@@ -5527,7 +5456,7 @@ retry_stratum:
 				if (pool->rpc_url[strlen(pool->rpc_url) - 1] != '/')
 					need_slash = true;
 
-                pool->lp_url = dbg_malloc(strlen(pool->rpc_url) + strlen(copy_start) + 2);
+                pool->lp_url = malloc(strlen(pool->rpc_url) + strlen(copy_start) + 2);
 				if (!pool->lp_url) {
 					applog(LOG_ERR, "Malloc failure in pool_active");
 					return false;
@@ -5623,7 +5552,7 @@ static struct work *clone_work(struct work *work)
 		/* Roll it again to prevent duplicates should this be used
 		 * directly later on */
 		roll_work(work);
-		cloned = true;
+        cloned = true;
 	}
 
 	if (cloned) {
@@ -5708,17 +5637,21 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	cg_dlock(&pool->data_lock);
 	alloc_len = pool->swork.cb_len;
 	align_len(&alloc_len);
-    coinbase = dbg_calloc(alloc_len, 1, 7);
-	if (unlikely(!coinbase))
-        quit(1, "Failed to dbg_calloc coinbase in gen_stratum_work");
-	hex2bin(coinbase, pool->swork.coinbase1, pool->swork.cb1_len);
-	hex2bin(coinbase + pool->swork.cb1_len, pool->nonce1, pool->n1_len);
-	hex2bin(coinbase + pool->swork.cb1_len + pool->n1_len, work->nonce2, pool->n2size);
-	hex2bin(coinbase + pool->swork.cb1_len + pool->n1_len + pool->n2size, pool->swork.coinbase2, pool->swork.cb2_len);
+    coinbase = safe_calloc(alloc_len, 1, "coinbase in gen_stratum_work");
 
-	/* Generate merkle root */
-	gen_hash(coinbase, merkle_root, pool->swork.cb_len);
-    dbg_free(coinbase, alloc_len, 7);
+    if (coinbase) {
+        hex2bin(coinbase, pool->swork.coinbase1, pool->swork.cb1_len);
+        hex2bin(coinbase + pool->swork.cb1_len, pool->nonce1, pool->n1_len);
+        hex2bin(coinbase + pool->swork.cb1_len + pool->n1_len, work->nonce2, pool->n2size);
+        hex2bin(coinbase + pool->swork.cb1_len + pool->n1_len + pool->n2size, pool->swork.coinbase2, pool->swork.cb2_len);
+
+        /* Generate merkle root */
+        gen_hash(coinbase, merkle_root, pool->swork.cb_len);
+
+        cfree(coinbase);
+    }
+
+
 	memcpy(merkle_sha, merkle_root, 32);
 	for (i = 0; i < pool->swork.merkles; i++) {
 		unsigned char merkle_bin[32];
@@ -5733,9 +5666,7 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	flip32(swap32, data32);
 	merkle_hash = bin2hex((const unsigned char *)merkle_root, 32);
 
-    header = dbg_calloc(pool->swork.header_len, 1, 8);
-	if (unlikely(!header))
-        quit(1, "Failed to dbg_calloc header in gen_stratum_work");
+    header = safe_calloc(pool->swork.header_len, 1, "header in gen_stratum_work");
 
 	sprintf(header, "%s%s%s%s%s%s%s",
 		pool->swork.bbversion,
@@ -5760,12 +5691,12 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	applog(LOG_DEBUG, "Generated stratum header %s", header);
 	applog(LOG_DEBUG, "Work job_id %s nonce2 %s ntime %s", work->job_id, work->nonce2, work->ntime);
 
-	free(merkle_hash);
+    cfree(merkle_hash);
 
 	/* Convert hex data to binary data for work */
 	if (unlikely(!hex2bin(work->data, header, 128)))
 		quit(1, "Failed to convert header to data in gen_stratum_work");
-    dbg_free(header, pool->swork.header_len, 8);
+    cfree(header);
 	calc_midstate(work);
 
 	set_target(work->target, work->sdiff);
@@ -6934,7 +6865,7 @@ char *curses_input(const char *query)
 	char *input;
 
 	echo();
-    input = dbg_malloc(255);
+    input = malloc(255);
 	if (!input)
 		quit(1, "Failed to malloc input");
 	leaveok(logwin, false);
@@ -6988,7 +6919,7 @@ bool add_pool_details(struct pool *pool, bool live, char *url, char *user, char 
 	pool->rpc_url = url;
 	pool->rpc_user = user;
 	pool->rpc_pass = pass;
-    pool->rpc_userpass = dbg_malloc(strlen(pool->rpc_user) + strlen(pool->rpc_pass) + 2);
+    pool->rpc_userpass = malloc(strlen(pool->rpc_user) + strlen(pool->rpc_pass) + 2);
 	if (!pool->rpc_userpass)
 		quit(1, "Failed to malloc userpass");
 	sprintf(pool->rpc_userpass, "%s:%s", pool->rpc_user, pool->rpc_pass);
@@ -7034,7 +6965,7 @@ static bool input_pool(bool live)
 	    strncmp(url, "https://", 8)) {
 		char *httpinput;
 
-        httpinput = dbg_malloc(256);
+        httpinput = malloc(256);
 		if (!httpinput)
 			quit(1, "Failed to malloc httpinput");
 		strcpy(httpinput, "http://");
@@ -7332,7 +7263,7 @@ bool add_cgpu(struct cgpu_info *cgpu)
 	if (d)
 		cgpu->device_id = ++d->lastid;
 	else {
-        d = dbg_malloc(sizeof(*d));
+        d = malloc(sizeof(*d));
 		memcpy(d->name, cgpu->drv->name, sizeof(d->name));
 		cgpu->device_id = d->lastid = 0;
 		HASH_ADD_STR(devids, name, d);
@@ -7359,7 +7290,7 @@ struct device_drv *copy_drv(struct device_drv *drv)
 {
 	struct device_drv *copy;
 
-    if (unlikely(!(copy = dbg_malloc(sizeof(*copy))))) {
+    if (unlikely(!(copy = malloc(sizeof(*copy))))) {
 		quit(1, "Failed to allocate device_drv copy of %s (%s)",
 				drv->name, drv->copy ? "copy" : "original");
 	}
@@ -7392,15 +7323,15 @@ static void hotplug_process()
 	if (!mining_thr)
 		quit(1, "Failed to hotplug realloc mining_thr");
 	for (i = 0; i < new_threads; i++) {
-        mining_thr[mining_threads + i] = dbg_calloc(1, sizeof(*thr));
+        mining_thr[mining_threads + i] = calloc(1, sizeof(*thr));
 		if (!mining_thr[mining_threads + i])
-            quit(1, "Failed to hotplug dbg_calloc mining_thr[%d]", i);
+            quit(1, "Failed to hotplug calloc mining_thr[%d]", i);
 	}
 
 	// Start threads
 	for (i = 0; i < new_devices; ++i) {
 		struct cgpu_info *cgpu = devices[total_devices];
-        cgpu->thr = dbg_malloc(sizeof(*cgpu->thr) * (cgpu->threads+1));
+        cgpu->thr = malloc(sizeof(*cgpu->thr) * (cgpu->threads+1));
 		cgpu->thr[cgpu->threads] = NULL;
 		cgpu->status = LIFE_INIT;
 		cgtime(&(cgpu->dev_start_tv));
@@ -7513,11 +7444,14 @@ int main(int argc, char *argv[])
 	if (unlikely(curl_global_init(CURL_GLOBAL_ALL)))
 		quit(1, "Failed to curl_global_init");
 
-    initial_args = dbg_malloc(sizeof(char *) * (argc + 1));
+    // mem_observer_init();
+
+    initial_args = malloc(sizeof(char *) * (argc + 1));
 	for  (i = 0; i < argc; i++)
 		initial_args[i] = strdup(argv[i]);
 	initial_args[argc] = NULL;
 
+    // dump_aps (0);
 #ifdef HAVE_LIBUSB
 	int err = libusb_init(NULL);
 	if (err) {
@@ -7577,9 +7511,7 @@ int main(int argc, char *argv[])
 	logstart = devcursor + 1;
 	logcursor = logstart + 1;
 
-    block = dbg_calloc(sizeof(struct block), 1, 9);
-	if (unlikely(!block))
-		quit (1, "main OOM");
+    block = safe_calloc(sizeof(struct block), 1, "block in main");
 	for (i = 0; i < 36; i++)
 		strcat(block->hash, "0");
 	HASH_ADD_STR(blocks, hash, block);
@@ -7610,7 +7542,7 @@ int main(int argc, char *argv[])
 		struct pool *pool;
 
 		pool = add_pool();
-        pool->rpc_url = dbg_malloc(255);
+        pool->rpc_url = malloc(255);
 		strcpy(pool->rpc_url, "Benchmark");
 		pool->rpc_user = pool->rpc_url;
 		pool->rpc_pass = pool->rpc_url;
@@ -7657,9 +7589,7 @@ int main(int argc, char *argv[])
 		opt_scantime = opt_scrypt ? 30 : 60;
 
 	total_control_threads = 9;
-    control_thr = dbg_calloc(total_control_threads, sizeof(*thr), 10);
-	if (!control_thr)
-        quit(1, "Failed to dbg_calloc control_thr");
+    control_thr = safe_calloc(total_control_threads, sizeof(*thr), "control_thr in main");
 
 	gwsched_thr_id = 0;
 
@@ -7798,7 +7728,7 @@ int main(int argc, char *argv[])
 		if (!pool->rpc_userpass) {
 			if (!pool->rpc_user || !pool->rpc_pass)
 				quit(1, "No login credentials supplied for pool %u %s", i, pool->rpc_url);
-            pool->rpc_userpass = dbg_malloc(strlen(pool->rpc_user) + strlen(pool->rpc_pass) + 2);
+            pool->rpc_userpass = malloc(strlen(pool->rpc_user) + strlen(pool->rpc_pass) + 2);
 			if (!pool->rpc_userpass)
 				quit(1, "Failed to malloc userpass");
 			sprintf(pool->rpc_userpass, "%s:%s", pool->rpc_user, pool->rpc_pass);
@@ -7817,13 +7747,10 @@ int main(int argc, char *argv[])
 			fork_monitor();
 	#endif // defined(unix)
 
-    mining_thr = dbg_calloc(mining_threads, sizeof(thr), 11);
-	if (!mining_thr)
-        quit(1, "Failed to dbg_calloc mining_thr");
+    mining_thr = safe_calloc(mining_threads, sizeof(thr), "mining_thr in main");
+
 	for (i = 0; i < mining_threads; i++) {
-        mining_thr[i] = dbg_calloc(1, sizeof(*thr), 12);
-		if (!mining_thr[i])
-            quit(1, "Failed to dbg_calloc mining_thr[%d]", i);
+        mining_thr[i] = safe_calloc(1, sizeof(*thr), "mining_thr[x] in main");
 	}
 
 	stage_thr_id = 2;
@@ -7904,7 +7831,7 @@ begin_bench:
 	k = 0;
 	for (i = 0; i < total_devices; ++i) {
 		struct cgpu_info *cgpu = devices[i];
-        cgpu->thr = dbg_malloc(sizeof(*cgpu->thr) * (cgpu->threads+1));
+        cgpu->thr = malloc(sizeof(*cgpu->thr) * (cgpu->threads+1));
 		cgpu->thr[cgpu->threads] = NULL;
 		cgpu->status = LIFE_INIT;
 
