@@ -35,6 +35,7 @@
 #include <signal.h>
 #include <curses.h>
 #include "uthash.h"
+#include "driver-config.h"
 
 #define GOLDEN_BACKLOG 5
 
@@ -42,6 +43,7 @@
 struct device_drv bitfury_drv;
 unsigned loops_count = 0;
 unsigned call_count = 0;
+
 
 
 // Forward declarations
@@ -188,7 +190,6 @@ inline void test_reclock(PBITFURY_DEVICE dev) {
 void init_devices (struct bitfury_device *devices, int chip_count) {
     int i;
     PBITFURY_DEVICE dev;
-// #define FAST_CLOCK1
 
 #ifdef FAST_CLOCK1
         #define BASE_OSC_BITS 51
@@ -209,7 +210,10 @@ void init_devices (struct bitfury_device *devices, int chip_count) {
             dev->osc6_bits = 54;
             if (!dev->osc6_bits_upd) dev->osc6_bits_upd = 54; // если не задано через опции командной строки
 #endif
-            dev->fixed_clk = false;
+
+#ifndef BITFURY_AUTOCLOCK
+            dev->fixed_clk = true;
+#endif
             dev->rbc_stat[0] = dev->rbc_stat[1] = dev->rbc_stat[2] = dev->rbc_stat[3] = 0;
         }
 
@@ -650,9 +654,6 @@ static int64_t try_scanHash(struct thr_info *thr)
     libbitfury_sendHashData(thr, devices, chip_count);
     hashes += works_receive(thr, devices, chip_count);
 
-    // if ( w_pushed == 0 ) nmsleep(5);
-
-
     cgtime(&now);
     now_mcs = tv2mcs (&now);
 
@@ -1042,7 +1043,7 @@ static int64_t try_scanHash(struct thr_info *thr)
 
 static int64_t bitfury_scanHash(struct thr_info *thr) {
      int64_t result = try_scanHash(thr);
-     if ( 0 == result ) nmsleep(1);
+     if ( 0 == result ) nmsleep(BITFURY_SCANHASH_DELAY);
      return result;
 }
 

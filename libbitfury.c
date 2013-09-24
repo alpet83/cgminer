@@ -379,9 +379,9 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
                 strcpy (num_chip, "   ");
                 chip_detected = detect_chip(chip_index);
 
-                if (!chip_detected && cnt_on_slot)
+                if (!chip_detected)
                 {
-                    applog(LOG_WARNING, "BITFURY slot: 0x%02X, chip #%X not detected !!!", i, n);
+                    if (cnt_on_slot) applog(LOG_WARNING, "BITFURY slot: 0x%02X, chip #%X not detected !!!", i, n);
                     chip_detected = detect_chip(chip_index);
                 }
 
@@ -401,6 +401,13 @@ int libbitfury_detectChips(struct bitfury_device *devices) {
             } while (chip_index < BITFURY_BANKCHIPS);
 
             if (cnt_on_slot) applog(LOG_WARNING, "BITFURY slot 0x%02X, chips detected: %s = %d", i, slot_line, cnt_on_slot);
+
+#ifdef      BITFURY_METABANK
+            if (cnt_on_slot && cnt_on_slot < BITFURY_BANKCHIPS) {
+                sprintf(slot_line, "For slot %X detected only %d chips from %d", i, cnt_on_slot, BITFURY_BANKCHIPS);
+                quit(1, slot_line);
+            }
+#endif
 
 			tm_i2c_clear_oe(i);
 //		}

@@ -365,7 +365,7 @@ void* dbg_calloc(size_t num, size_t size, char where) {
   total_alloc += size * num;
   alloc_map[where] += size * num;
 
-  if ( total_alloc > 512 * 1024 ) {
+  if ( total_alloc > 16 * 1024 ) {
 
       buffer [0] = 0;
       int i;
@@ -1606,6 +1606,7 @@ void clean_work(struct work *work)
     free(work->gbt_coinbase);
     free(work->nonce1);
     memset(work, 0, sizeof(struct work));
+    work->debug_stage = -1;
 }
 
 
@@ -1614,9 +1615,20 @@ static struct work *make_work(void)
 
 #ifdef STATIC_WORKS
     static char overflow[1024];
-    int idx = work_aidx++;
-    if ( NULL == works_pool[idx] )
+
+    int i;
+    int idx = -1;
+
+    for (i = 0; i < STATIC_WORKS; i ++)
+        if ( NULL == works_pool[i]  || works_pool[i]->debug_stage < 0 ) idx = i;
+
+    if (idx < 0)
+        idx = work_aidx++;
+
+    if ( NULL == works_pool[idx] ) {
          works_pool[idx] = calloc (1, sizeof(struct work));
+         work_aidx = idx + 1;
+    }
 
     struct work *work = works_pool[idx];
     if (work_aidx >= STATIC_WORKS)
