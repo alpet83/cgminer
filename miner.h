@@ -603,6 +603,8 @@ struct thr_info {
 	bool	work_restart;
 };
 
+typedef struct thr_info thr_info_t;
+
 struct string_elist {
 	char *string;
 	bool free_me;

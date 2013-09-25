@@ -45,6 +45,22 @@ static void my_log_curses(int prio, const char *datetime, const char *str)
 /*
  * log function
  */
+
+void format_time(timeval_p tv, char *datetime) {
+
+    const time_t tmp_time = tv->tv_sec;
+    struct tm *tm;
+    tm = localtime(&tmp_time);
+    sprintf(datetime, " [%d-%02d-%02d %02d:%02d:%02d.%03d] ",
+        tm->tm_year + 1900,
+        tm->tm_mon + 1,
+        tm->tm_mday,
+        tm->tm_hour,
+        tm->tm_min,
+        tm->tm_sec,
+        tv->tv_usec / 1000);
+}
+
 void _applog(int prio, const char *str)
 {
 #ifdef HAVE_SYSLOG_H
@@ -56,22 +72,10 @@ void _applog(int prio, const char *str)
 #endif
 	else {
 		char datetime[64];
-		struct timeval tv = {0, 0};
-		struct tm *tm;
-
+        timeval_t tv = {0, 0};
 		cgtime(&tv);
+        format_time (&tv, datetime);
 
-		const time_t tmp_time = tv.tv_sec;
-		tm = localtime(&tmp_time);
-
-        sprintf(datetime, " [%d-%02d-%02d %02d:%02d:%02d.%03d] ",
-			tm->tm_year + 1900,
-			tm->tm_mon + 1,
-			tm->tm_mday,
-			tm->tm_hour,
-			tm->tm_min,
-            tm->tm_sec,
-            tv.tv_usec / 1000);
 
 		/* Only output to stderr if it's not going to the screen as well */
 

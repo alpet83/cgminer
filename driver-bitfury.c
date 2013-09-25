@@ -50,8 +50,8 @@ unsigned call_count = 0;
 
 
 // Forward declarations
-static void bitfury_disable(struct thr_info* thr);
-static bool bitfury_prepare(struct thr_info *thr);
+static void bitfury_disable(thr_info_t* thr);
+static bool bitfury_prepare(thr_info_t *thr);
 int calc_stat(time_t * stat_ts, time_t stat, struct timeval now);
 int calc_stat_f(double * stat_ts, double elapse, double now_mcs);
 double shares_to_ghashes(int shares, double seconds);
@@ -105,7 +105,7 @@ static uint32_t bitfury_checkNonce(struct work *work, uint32_t nonce)
     applog(LOG_INFO, "INFO: bitfury_checkNonce");
 }
 
-static int bitfury_submitNonce(struct thr_info *thr, struct bitfury_device *device, struct timeval *now, struct work *owork, uint32_t nonce)
+static int bitfury_submitNonce(thr_info_t *thr, bitfury_device_t *device, struct timeval *now, struct work *owork, uint32_t nonce)
 {
     int i;
     int is_dupe = 0;
@@ -133,7 +133,7 @@ static int bitfury_submitNonce(struct thr_info *thr, struct bitfury_device *devi
 }
 
 
-int bitfury_findChip(struct bitfury_device *devices, int chip_count, int slot, int fs) {
+int bitfury_findChip(bitfury_device_t *devices, int chip_count, int slot, int fs) {
     int n;
     for (n = 0; n < chip_count; n++) {
         if ( (devices[n].slot == slot) && (devices[n].fasync == fs) )
@@ -142,7 +142,7 @@ int bitfury_findChip(struct bitfury_device *devices, int chip_count, int slot, i
     return -1;
 }
 
-void bitfury_setChipClk(struct bitfury_device *devices, int chip_count, int slot, int fs, int osc_bits) {
+void bitfury_setChipClk(bitfury_device_t *devices, int chip_count, int slot, int fs, int osc_bits) {
     int n = bitfury_findChip(devices, chip_count, slot, fs);
     if ( n >= 0 ) {
          // devices[n].osc6_bits = osc_bits;
@@ -155,7 +155,7 @@ void bitfury_setChipClk(struct bitfury_device *devices, int chip_count, int slot
     }
 }
 
-void bitfury_setSlotClk(struct bitfury_device *devices, int chip_count, int slot, int *fs_list) {
+void bitfury_setSlotClk(bitfury_device_t *devices, int chip_count, int slot, int *fs_list) {
 
     int n;
     for ( n = 0; ( fs_list[n] >= 0 ) && ( n < BITFURY_BANKCHIPS ); n ++ ) {
@@ -174,7 +174,7 @@ double tv_diff(PTIMEVAL a, PTIMEVAL b) {
 }
 
 
-inline void test_reclock(PBITFURY_DEVICE dev) {
+inline void test_reclock(bitfury_device_p dev) {
 
     if ( dev->osc6_bits != dev->osc6_bits_upd ) {
         applog(LOG_WARNING, " for slot %X chip %X, osc6_bits changed from %d to %d, csw_count = %3d, cch_stat = { %2d %2d %2d %2d } ",
@@ -190,17 +190,9 @@ inline void test_reclock(PBITFURY_DEVICE dev) {
     }
 }
 
-void init_devices (struct bitfury_device *devices, int chip_count) {
+void init_devices (bitfury_device_t *devices, int chip_count) {
     int i;
-    PBITFURY_DEVICE dev;
-
-#ifdef FAST_CLOCK1
-        #define BASE_OSC_BITS 51
-        #define LOW_HASHRATE 2.7
-#else
-        #define BASE_OSC_BITS 53
-        #define LOW_HASHRATE 1.5
-#endif
+    bitfury_device_p dev;
 
 
     for (i = 0; i < chip_count; i++) {
@@ -265,18 +257,18 @@ void get_opt_filename(char *filename) {
     if ( getenv("HOME") && *getenv("HOME") ) {
             strcpy(filename, getenv("HOME"));
             strcat(filename, "/");
-            mkdir(filename, 0777);
+            mkdir(filename, 0x777);
     }
     else
         strcpy(filename, "");
 
     strncat(filename, ".cgminer/", PATH_MAX);
-    mkdir(filename, 0777);
+    mkdir(filename, 0x777);
     strncat(filename, "bitfury_opt.conf", PATH_MAX);
 }
 
 
-void load_opt_conf (struct bitfury_device *devices, int chip_count) {
+void load_opt_conf (bitfury_device_t *devices, int chip_count) {
     char filename[PATH_MAX];
     get_opt_filename(filename);
     FILE *fcfg = fopen(filename, "r");
@@ -322,7 +314,7 @@ void load_opt_conf (struct bitfury_device *devices, int chip_count) {
                 if ( n_chip < 0 ) break;
                 int i = bitfury_findChip (devices, chip_count, n_slot, n_chip);
                 if ( i >= 0 ) {
-                    PBITFURY_DEVICE dev = &devices[i];
+                    bitfury_device_p dev = &devices[i];
                     memcpy( dev->cch_stat, v, sizeof(v) ); // update stat
                     int best = 0;
                     // поправка лучшего битклока по количеству выборов
@@ -345,7 +337,7 @@ void load_opt_conf (struct bitfury_device *devices, int chip_count) {
 }
 
 
-void save_opt_conf (struct bitfury_device *devices, int chip_count) {
+void save_opt_conf (bitfury_device_t *devices, int chip_count) {
     FILE *fcfg;
     char filename[PATH_MAX];
     if (!chip_count) return;
@@ -359,7 +351,7 @@ void save_opt_conf (struct bitfury_device *devices, int chip_count) {
     char line[1024] = { 0 };
 
     for (i = 0; i < chip_count; i ++) {
-        PBITFURY_DEVICE dev = &devices[i];
+        bitfury_device_p dev = &devices[i];
 
         if (dev->slot != last_slot) {
             fprintf(fcfg, "slot_%X=%s\n", last_slot, line);
@@ -386,7 +378,11 @@ void save_opt_conf (struct bitfury_device *devices, int chip_count) {
 }
 
 
-
+struct timeval* get_cgtime() {
+    static struct timeval now;
+    cgtime(&now);
+    return &now;
+}
 
 inline int works_prefetched (struct cgpu_info *cgpu) {
     int i, cnt = 0;
@@ -452,7 +448,7 @@ struct work* load_prefetch(struct cgpu_info *cgpu){
 }
 
 
-inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devices, int chip_count) {
+inline uint64_t works_receive(thr_info_t *thr, bitfury_device_t *devices, int chip_count) {
 
     uint64_t hashes = 0;
     struct timeval now;
@@ -462,7 +458,7 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
 
     for (chip = 0;chip < chip_count; chip++) {
         int nonces_cnt = 0;
-        struct bitfury_device *dev = &devices[chip];
+        bitfury_device_p dev = &devices[chip];
 
         if (dev->job_switched && dev->work) {
             int j;
@@ -519,7 +515,7 @@ inline uint64_t works_receive(struct thr_info *thr, struct bitfury_device *devic
     return hashes;
 }
 
-inline int work_push(struct thr_info *thr, PBITFURY_DEVICE dev) {
+inline int work_push(thr_info_t *thr, bitfury_device_p dev) {
     dev->job_switched = 0;
     if ( dev->work == NULL )
     {
@@ -551,10 +547,66 @@ inline int work_push(struct thr_info *thr, PBITFURY_DEVICE dev) {
     return 1;
 }
 
-static int64_t try_scanHash(struct thr_info *thr)
+void dump_histogram(short *stat, char *buff, size_t buff_sz) {
+    int i;
+    for (i = 0; i < 50; i ++)
+        if ( stat[i] ) {
+            int n;
+            size_t l = strlen(buff);
+            if (l >= buff_sz) break;
+
+            snprintf (buff + l, buff_sz - l, "\t%.1f = ", 0.1 * (float)i );
+            for (n = 0; n < buff[i]; n ++)
+                strncat(buff, "*", buff_sz);
+            strncat (buff, "\t\t\t\t\n\r", buff_sz);
+        }
+}
+
+void dump_chip_eff (bitfury_device_p dev, int ridx) {
+    char filename[PATH_MAX];
+    strcpy(filename, "/var/log/bitfury/");
+    mkdir(filename, 0x777);
+    size_t l = strlen(filename);
+    snprintf(filename + l, PATH_MAX - l, "slot%X_chip%X.log", dev->slot, dev->fasync);
+
+    FILE *f = fopen(filename, "a");
+    if (!f) {
+        applog(LOG_WARNING, "Cannot open file %s for append", filename);
+        return;
+    }
+
+    char buff[4096];
+    format_time ( get_cgtime(), buff );
+    fprintf(f, "%s --------------------- \n", buff);
+
+    buff[0] = 0;
+    short *stat = dev->big_stat[ridx];
+    dump_histogram ( stat, buff, 4096 );
+
+
+    float median = 0;
+    float count = 0;
+    for (l = 1; l < 50; l ++) {
+        if (stat[l] < 5) continue; // не существенные результаты
+        count += (float) stat[l];
+        median += 0.1 * (float) ( l * stat[l] );
+    }
+
+
+    fprintf(f, "%s", buff);
+    if (count > 0) {
+        dev->eff_speed = median / count;
+        fprintf(f, "osc6_bits = %d, eff_speed = %.2f Gh/s, hw_rate = %.1f%% \n", BASE_OSC_BITS + ridx, dev->eff_speed, dev->hw_rate);
+    }
+    fclose(f);
+
+}
+
+
+static int64_t try_scanHash(thr_info_t *thr)
 {
 
-    static struct bitfury_device *devices, *dev; // TODO Move somewhere to appropriate place
+    static bitfury_device_t *devices, *dev; // TODO Move somewhere to appropriate place
     int chip_count;
     int chip;
     static no_work = 0;
@@ -590,7 +642,7 @@ static int64_t try_scanHash(struct thr_info *thr)
 
     static int last_chip = 0; // для кольцевого обхода по выдаче заданий
 
-    int chips_by_rate[50] = { 0 };
+    short chips_by_rate[50] = { 0 };
 
 
     int i;
@@ -626,9 +678,9 @@ static int64_t try_scanHash(struct thr_info *thr)
     last_call = now;
     int w_pushed = 0;
 
-    stat_memory_usage(0);
+
     hashes += works_receive(thr, devices, chip_count);
-    stat_memory_usage(1);
+
 
     // подготовка заданий для чипов
     for (chip = 0; chip < chip_count; chip++) {
@@ -659,15 +711,15 @@ static int64_t try_scanHash(struct thr_info *thr)
            last_chip = 0;
     }
 
-    stat_memory_usage(2);
+
 
     libbitfury_sendHashData(thr, devices, chip_count);
 
-    stat_memory_usage(3);
+
 
     hashes += works_receive(thr, devices, chip_count);
 
-    stat_memory_usage(4);
+
 
     cgtime(&now);
     now_mcs = tv2mcs (&now);
@@ -783,9 +835,9 @@ static int64_t try_scanHash(struct thr_info *thr)
             if ( ( ridx >= 0 ) && ( stat_dumps > 1 )  ) {
                 // float prev = dev->rbc_stat[ridx] * 0.92;
 
-                float ema_value = 100;
+                float ema_value = 1;
                 if ( dev->csw_back < 32 )
-                         ema_value = 32; // усреднять ближние циклы
+                         ema_value = 1; // усреднять ближние циклы
 
                 float prev_part = ( 1 - 1 / ema_value );
 
@@ -796,12 +848,15 @@ static int64_t try_scanHash(struct thr_info *thr)
                      ema_ghash = ghash;
 
                 dev->rbc_stat[ridx] = ema_ghash;
-                gh[dev->slot][chip % BITFURY_BANKCHIPS] = ema_ghash;
+                gh[dev->slot][i_chip] = ema_ghash;
             }
 
             i = (int) round ( ema_ghash * 10 );
             if ( i >= 49 ) i = 49;
             chips_by_rate [i] ++;
+            if (dev->csw_back > 12) // если после переключения прошло много времени, и производительность стабилизировалась.
+                dev->big_stat[ridx][i] ++; // для получения детального отчета по чипу
+
 
             char *cl_tag = " ";
             if ( ema_ghash >= 3 ) cl_tag = " +";
@@ -834,8 +889,14 @@ static int64_t try_scanHash(struct thr_info *thr)
 
                 snprintf( stat_lines[n_slot] + len, 256 - len, "%c%2.0f%c%2.0f%c%2.0f%c%2.0f|", s0, h0, s1, h1, s2, h2, s3, h3, s4 ); // intermediate dump clock
 
+                dump_chip_eff (dev, ridx);
+                if (dev->eff_speed > 0) {
+                    dev->rbc_stat[ridx] = dev->eff_speed; // наиболее честный (?)
+                    gh[dev->slot][i_chip] = dev->eff_speed;
+                }
 
-                // проверка на слишком маленькую частоту
+                // проверки на слишком маленькую частоту
+                if ( dev->csw_back > 50 && dev->eff_speed > 0 && dev->eff_speed < LOW_HASHRATE) dev->fixed_clk = false;
 
                 if ( dev->csw_back > 32 && ema_ghash > 1.0 && ema_ghash < LOW_HASHRATE && !dev->fixed_clk ) {
                     dev->fixed_clk = false;
@@ -942,15 +1003,9 @@ static int64_t try_scanHash(struct thr_info *thr)
 
 #ifdef BITFURY_ENABLE_SHORT_STAT
         // printing histogram
-        for (i = 0; i < 50; i ++)
-            if ( chips_by_rate[i] ) {
-                int n;
-                sprintf(line, "%.1f = ", 0.1 * (float)i );
-                for (n = 0; n < chips_by_rate[i]; n ++)
-                    strncat(line, "*", 2048);
-
-                applog(LOG_WARNING, "%s                                             ", line);
-            }
+        strcpy(line, "Chips by rate stats:\t\t\t\t\n\r");
+        dump_histogram(chips_by_rate, line, 2048);
+        applog(LOG_WARNING, "%s", line);
 
         // sprintf(line, "vvvvwww SHORT stat %ds: wwwvvvv", short_stat);
         sprintf(line, "  ================== SHORT stat, elapsed %.3fs, no_work = %d, dump %d, call period = %.2f ms, count = %5d =================== ",
@@ -1017,8 +1072,7 @@ static int64_t try_scanHash(struct thr_info *thr)
 
         applog(LOG_WARNING, "Median hash-rate saldo = %4.1f, seconds to long stat %5d, prefetched = %3d ", ghsm_saldo, long_stat - elapsed, pcount  );
         applog(LOG_WARNING, line);
-        malloc_stats();
-        // stat_memory_usage(256);
+        // malloc_stats();
 #endif
         short_out_t = now.tv_sec;
 
@@ -1073,7 +1127,7 @@ static int64_t try_scanHash(struct thr_info *thr)
     return hashes;
 }
 
-static int64_t bitfury_scanHash(struct thr_info *thr) {
+static int64_t bitfury_scanHash(thr_info_t *thr) {
      struct timeval now;
      double time_ms;
      cgtime (&now);
@@ -1122,7 +1176,7 @@ static void bitfury_statline_before(char *buf, struct cgpu_info *cgpu)
 }
 
 
-static void bitfury_shutdown(struct thr_info *thr)
+static void bitfury_shutdown(thr_info_t *thr)
 {
     int chip_count;
     int i;
@@ -1133,7 +1187,7 @@ static void bitfury_shutdown(struct thr_info *thr)
     libbitfury_shutdownChips(thr->cgpu->devices, chip_count);
 }
 
-static void bitfury_disable(struct thr_info *thr)
+static void bitfury_disable(thr_info_t *thr)
 {
     applog(LOG_INFO, "INFO bitfury_disable");
 }
@@ -1204,7 +1258,7 @@ static void get_options(struct cgpu_info *cgpu)
     } while (comma != NULL);
 } // */
 
-static bool bitfury_prepare(struct thr_info *thr)
+static bool bitfury_prepare(thr_info_t *thr)
 {
     struct timeval now;
     struct cgpu_info *cgpu = thr->cgpu;
@@ -1222,7 +1276,7 @@ static bool bitfury_prepare(struct thr_info *thr)
 static struct api_data *bitfury_api_stats(struct cgpu_info *cgpu)
 {
     struct api_data *root = NULL;
-    static struct bitfury_device *devices;
+    static bitfury_device_t *devices;
     struct timeval now;
     struct bitfury_info *info = cgpu->device_data;
     int shares_found, i;

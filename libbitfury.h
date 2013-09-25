@@ -102,13 +102,15 @@ struct bitfury_device {
 	unsigned hw_errors;
 
     int              alerts;
+    float            eff_speed;       // рассчитывается из big_stat
     float            hw_rate;
-    bool             fixed_clk;
-    float            rbc_stat[4];   // rate-by-clock: 53, 54, 55, 56 associated to chip hash-rate
-    int              cch_stat[4];   // clock choice stat: сколько выбирался каждый клок по итогам соревнования
-    int              csw_back;      // clock switch back: сколько статистики прошло, после переключения частоты
-    int              csw_count;     // clock switch count: сколько раз сменялась частота принудительно
-    struct timeval   rst_time;      // reset time: когда устройство сбрасывалось последний раз
+    bool             fixed_clk;    
+    float            rbc_stat[4];     // rate-by-clock: 53, 54, 55, 56 associated to chip hash-rate
+    short            big_stat[4][50];
+    int              cch_stat[4];     // clock choice stat: сколько выбирался каждый клок по итогам соревнования
+    int              csw_back;        // clock switch back: сколько статистики прошло, после переключения частоты
+    int              csw_count;       // clock switch count: сколько раз сменялась частота принудительно
+    struct timeval   rst_time;        // reset time: когда устройство сбрасывалось последний раз
 
 	unsigned int matching_work;
 	unsigned int nonces[32];
@@ -116,7 +118,8 @@ struct bitfury_device {
 	double gh_stat[8];
 };
 
-typedef struct bitfury_device *PBITFURY_DEVICE;
+typedef struct bitfury_device bitfury_device_t;
+typedef bitfury_device_t *bitfury_device_p;
 typedef struct timeval *PTIMEVAL;
 
 int libbitfury_readHashData(unsigned int *res);

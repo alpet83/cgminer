@@ -28,6 +28,11 @@ extern int opt_log_level;
 
 #define LOGBUFSIZ 256
 
+typedef struct timeval timeval_t;
+typedef timeval_t *timeval_p;
+
+extern void format_time(timeval_p tv, char *datetime);
+
 extern void _applog(int prio, const char *str);
 
 #define applog(prio, fmt, ...) do { \
