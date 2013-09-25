@@ -12,10 +12,10 @@
 
 #ifdef FAST_CLOCK1
         #define BASE_OSC_BITS 51
-        #define LOW_HASHRATE 2.7
+        #define LOW_HASHRATE 2.5
 #else
         #define BASE_OSC_BITS 53
-        #define LOW_HASHRATE 2.0
+        #define LOW_HASHRATE 1.8
 #endif
 
 #endif
